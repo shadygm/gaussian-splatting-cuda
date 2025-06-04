@@ -233,6 +233,20 @@ namespace gs {
             if (json.contains("max_cap")) {
                 params.max_cap = json["max_cap"];
             }
+
+            if (json.contains("eval_steps")) {
+                params.eval_steps.clear();
+                for (const auto& step : json["eval_steps"]) {
+                    params.eval_steps.push_back(step.get<size_t>());
+                }
+            }
+
+            if (json.contains("save_steps")) {
+                params.save_steps.clear();
+                for (const auto& step : json["save_steps"]) {
+                    params.save_steps.push_back(step.get<size_t>());
+                }
+            }
             return params;
         }
 
