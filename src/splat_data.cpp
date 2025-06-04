@@ -5,6 +5,7 @@
 #include "external/nanoflann.hpp"
 #include "external/tinyply.hpp"
 #include <algorithm>
+#include "kernels/morton_encoding.cuh"
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -261,29 +262,46 @@ SplatData SplatData::init_model_from_pointcloud(const gs::param::TrainingParamet
     // Ensure colors are normalized floats
     pcd.normalize_colors();
 
-    // 1. means - already a tensor, just move to CUDA and set requires_grad
-    auto means = pcd.means.to(torch::kCUDA).set_requires_grad(true);
+    // 1. means - move to CUDA first for Morton encoding
+    auto means = pcd.means.to(torch::kCUDA);
 
-    // 2. scaling (log(σ)) - compute nearest neighbor distances
+    // Apply Morton encoding for better spatial locality
+    std::cout << "Applying Morton encoding for spatial sorting..." << std::endl;
+    auto morton_codes = gs::morton_encode(means);
+    auto sorted_indices = gs::morton_sort_indices(morton_codes);
+
+    // Debug info
+    std::cout << "  - Original points: " << means.size(0) << std::endl;
+    std::cout << "  - Morton codes computed and sorted" << std::endl;
+
+    // Reorder all point cloud data according to Morton order
+    means = means.index_select(0, sorted_indices).contiguous().set_requires_grad(true);
+
+    // Sort colors on CPU first (more efficient), then move to GPU
+    auto colors_sorted = pcd.colors.to(torch::kCPU).index_select(0, sorted_indices.to(torch::kCPU));
+
+    // 2. scaling (log(σ)) - compute nearest neighbor distances on sorted points
+    std::cout << "Computing nearest neighbor distances..." << std::endl;
     auto nn_dist = torch::clamp_min(compute_mean_neighbor_distances(means), 1e-7);
-    auto scaling = torch::log(torch::sqrt(nn_dist) * 0.1)
+    auto scaling = torch::log(torch::sqrt(nn_dist) * 0.1f)
                        .unsqueeze(-1)
                        .repeat({1, 3})
-                       .to(f32_cuda)
+                       .contiguous()
                        .set_requires_grad(true);
 
-    // 3. rotation (quaternion, identity) - split into multiple lines to avoid compilation error
+    // 3. rotation (quaternion, identity)
     auto rotation = torch::zeros({means.size(0), 4}, f32_cuda);
     rotation.index_put_({torch::indexing::Slice(), 0}, 1);
-    rotation = rotation.set_requires_grad(true);
+    rotation = rotation.contiguous().set_requires_grad(true);
 
     // 4. opacity (inverse sigmoid of 0.5)
     auto opacity = torch::logit(0.5f * torch::ones({means.size(0), 1}, f32_cuda))
+                       .contiguous()
                        .set_requires_grad(true);
 
     // 5. shs (SH coefficients)
-    // Colors are already normalized to float by pcd.normalize_colors()
-    auto colors_float = pcd.colors.to(torch::kCUDA);
+    // Colors are already normalized to float and sorted
+    auto colors_float = colors_sorted.to(torch::kCUDA);
     auto fused_color = rgb_to_sh(colors_float);
 
     const int64_t feature_shape = static_cast<int64_t>(std::pow(params.optimization.sh_degree + 1, 2));

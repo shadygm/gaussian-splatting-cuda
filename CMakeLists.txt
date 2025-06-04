@@ -97,6 +97,7 @@ endif()
 
 set(KERNEL_SOURCES
         kernels/ssim.cu
+        kernels/morton_encoding.cu
 )
 
 add_library(gaussian_kernels STATIC ${KERNEL_SOURCES})
