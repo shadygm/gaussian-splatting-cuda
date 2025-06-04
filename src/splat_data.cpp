@@ -4,8 +4,8 @@
 #include "core/point_cloud.hpp"
 #include "external/nanoflann.hpp"
 #include "external/tinyply.hpp"
-#include <algorithm>
 #include "kernels/morton_encoding.cuh"
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <fstream>

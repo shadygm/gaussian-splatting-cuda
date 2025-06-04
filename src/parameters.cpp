@@ -106,8 +106,7 @@ namespace gs {
                     {"opacity_reg", defaults.opacity_reg, "Opacity L1 regularization weight"},
                     {"scale_reg", defaults.scale_reg, "Scale L1 regularization weight"},
                     {"sh_degree", defaults.sh_degree, "Gradient threshold for densification"},
-                    {"max_cap", defaults.max_cap, "Maximum number of Gaussians for MCMC strategy"}
-                };
+                    {"max_cap", defaults.max_cap, "Maximum number of Gaussians for MCMC strategy"}};
 
                 // Check all expected parameters
                 for (const auto& param : expected_params) {

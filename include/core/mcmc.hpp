@@ -49,6 +49,7 @@ private:
     int relocate_gs();
     int add_new_gs();
     void inject_noise();
+    void resort_by_morton_order();
     void update_optimizer_for_relocate(torch::optim::Adam* optimizer,
                                        const torch::Tensor& sampled_indices,
                                        const torch::Tensor& dead_indices,

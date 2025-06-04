@@ -3,6 +3,7 @@
 #include "core/debug_utils.hpp"
 #include "core/parameters.hpp"
 #include "core/rasterizer.hpp"
+#include "kernels/morton_encoding.cuh"
 #include <c10/cuda/CUDACachingAllocator.h>
 #include <exception>
 #include <iostream>
@@ -341,20 +342,21 @@ void MCMC::post_backward(int iter, gs::RenderOutput& render_output) {
     if (iter < _refine_stop_iter && iter > _refine_start_iter && iter % _refine_every == 0) {
         // Relocate dead Gaussians
         int n_relocated = relocate_gs();
-        if (_verbose) {
+        if (_verbose && n_relocated > 0) {
             std::cout << "Step " << iter << ": Relocated " << n_relocated << " GSs." << std::endl;
         }
 
         // Add new Gaussians
         int n_added = add_new_gs();
-        if (_verbose) {
+        if (_verbose && n_added > 0) {
             std::cout << "Step " << iter << ": Added " << n_added << " GSs. "
                       << "Now having " << _splat_data.size() << " GSs." << std::endl;
         }
 
+        resort_by_morton_order();
+
         c10::cuda::CUDACachingAllocator::emptyCache();
     }
-
     // Inject noise to positions
     inject_noise();
 }
@@ -424,4 +426,74 @@ void MCMC::initialize(const gs::param::OptimizationParameters& optimParams) {
     // This means after max_steps, lr will be 0.01 * initial_lr
     const double gamma = std::pow(0.01, 1.0 / _params->iterations);
     _scheduler = std::make_unique<ExponentialLR>(*_optimizer, gamma, 0);
+}
+
+void MCMC::resort_by_morton_order() {
+    // Get current positions
+    auto positions = _splat_data.get_means();
+    const int N = positions.size(0);
+
+    // Verify optimizer states match
+    for (int i = 0; i < 6; ++i) {
+        auto& param = _optimizer->param_groups()[i].params()[0];
+        void* param_key = param.unsafeGetTensorImpl();
+
+        if (_optimizer->state().count(param_key) > 0) {
+            auto& adam_state = static_cast<torch::optim::AdamParamState&>(*_optimizer->state()[param_key]);
+            TORCH_CHECK(adam_state.exp_avg().size(0) == N,
+                        "Optimizer state size mismatch for param " + std::to_string(i));
+        }
+    }
+
+    // Compute Morton codes for current positions
+    auto morton_codes = gs::morton_encode(positions);
+    auto sorted_indices = gs::morton_sort_indices(morton_codes);
+
+    // Double-check indices are valid
+    auto max_idx = sorted_indices.max().item<int64_t>();
+    auto min_idx = sorted_indices.min().item<int64_t>();
+    TORCH_CHECK(max_idx < N && min_idx >= 0,
+                "Invalid sorted indices: range [", min_idx, ", ", max_idx, "] for size ", N);
+
+    // Check if already sorted
+    auto expected_indices = torch::arange(N, sorted_indices.options());
+    if (torch::allclose(sorted_indices, expected_indices)) {
+        return; // Already sorted
+    }
+
+    if (_verbose) {
+        std::cout << "Re-sorting " << N << " Gaussians by Morton order..." << std::endl;
+    }
+
+    // Reorder all model parameters
+    auto sorted_means = _splat_data.means().index_select(0, sorted_indices).clone();
+    auto sorted_sh0 = _splat_data.sh0().index_select(0, sorted_indices).clone();
+    auto sorted_shN = _splat_data.shN().index_select(0, sorted_indices).clone();
+    auto sorted_scaling = _splat_data.scaling_raw().index_select(0, sorted_indices).clone();
+    auto sorted_rotation = _splat_data.rotation_raw().index_select(0, sorted_indices).clone();
+    auto sorted_opacity = _splat_data.opacity_raw().index_select(0, sorted_indices).clone();
+
+    // Copy sorted data back (preserving requires_grad)
+    _splat_data.means().data().copy_(sorted_means);
+    _splat_data.sh0().data().copy_(sorted_sh0);
+    _splat_data.shN().data().copy_(sorted_shN);
+    _splat_data.scaling_raw().data().copy_(sorted_scaling);
+    _splat_data.rotation_raw().data().copy_(sorted_rotation);
+    _splat_data.opacity_raw().data().copy_(sorted_opacity);
+
+    // Reorder optimizer states
+    for (int i = 0; i < 6; ++i) {
+        auto& param = _optimizer->param_groups()[i].params()[0];
+        void* param_key = param.unsafeGetTensorImpl();
+
+        if (_optimizer->state().count(param_key) > 0) {
+            auto& adam_state = static_cast<torch::optim::AdamParamState&>(*_optimizer->state()[param_key]);
+
+            auto sorted_exp_avg = adam_state.exp_avg().index_select(0, sorted_indices).clone();
+            auto sorted_exp_avg_sq = adam_state.exp_avg_sq().index_select(0, sorted_indices).clone();
+
+            adam_state.exp_avg().data().copy_(sorted_exp_avg);
+            adam_state.exp_avg_sq().data().copy_(sorted_exp_avg_sq);
+        }
+    }
 }
