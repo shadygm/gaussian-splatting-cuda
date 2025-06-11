@@ -7,10 +7,41 @@
 A high-performance C++ and CUDA implementation of 3D Gaussian Splatting, built upon the [gsplat](https://github.com/nerfstudio-project/gsplat) rasterization backend.
 
 ## News
+- **[2025-06-10]**: Fixed some issues. We are closing the gap to the gsplat metrics. However, there is still a small mismatch.
 - **[2025-06-04]**: Added MCMC strategy with `--max-cap` command line option for controlling maximum Gaussian count.
 - **[2025-06-03]**: Switched to Gsplat backend and updated license.
 - **[2024-05-27]**: Updated to LibTorch 2.7.0 for better compatibility and performance. Breaking changes in optimizer state management have been addressed.
 - **[2024-05-26]**: The current goal of this repo is to move towards a permissive license. Major work has been done to replace the rasterizer with the gsplat implementation.
+
+## Metrics
+Currently the implementation does not achieve on par results with gsplat-mcmc, but it is a work in progress.
+It is just a matter of time to fix the bug. Help is welcome :) The metrics for the mcmc strategy are as follows:
+
+| Scene    | Iteration | PSNR          | SSIM         | LPIPS        | Time per Image | Num Gaussians |
+| -------- | --------- | ------------- | ------------ | ------------ | -------------- | ------------- |
+| garden   | 30000     | 27.112114     | 0.854833     | 0.157624     | 0.304765       | 1000000       |
+| bicycle  | 30000     | 25.047745     | 0.767729     | 0.254825     | 0.293618       | 1000000       |
+| stump    | 30000     | 26.554749     | 0.784203     | 0.263013     | 0.296536       | 1000000       |
+| bonsai   | 30000     | 32.534199     | 0.948675     | 0.246924     | 0.436188       | 1000000       |
+| counter  | 30000     | 29.187017     | 0.915823     | 0.242159     | 0.441259       | 1000000       |
+| kitchen  | 30000     | 31.680832     | 0.933897     | 0.154965     | 0.449078       | 1000000       |
+| room     | 30000     | 32.211632     | 0.930754     | 0.273719     | 0.413519       | 1000000       |
+| **mean** | **30000** | **29.189755** | **0.876559** | **0.227604** | **0.376423**   | **1000000**   |
+
+
+For reference, here are the metrics for the official gsplat-mcmc implementation below. However, the 
+lpips results are not directly comparable, as the gsplat-mcmc implementation uses a different lpips model.
+
+| Scene    | Iteration | PSNR          | SSIM         | LPIPS        | Time per Image | Num Gaussians |
+| -------- | --------- | ------------- | ------------ | ------------ | -------------- | ------------- |
+| garden   | 30000     | 27.307266     | 0.854643     | 0.103883     | 0.015346       | 1000000       |
+| bicycle  | 30000     | 25.615253     | 0.774689     | 0.182401     | 0.014299       | 1000000       |
+| stump    | 30000     | 26.964493     | 0.789816     | 0.162758     | 0.021624       | 1000000       |
+| bonsai   | 30000     | 32.735737     | 0.953360     | 0.105922     | 0.012344       | 1000000       |
+| counter  | 30000     | 29.495266     | 0.924103     | 0.129898     | 0.015629       | 1000000       |
+| kitchen  | 30000     | 31.660593     | 0.935315     | 0.087113     | 0.013513       | 1000000       |
+| room     | 30000     | 32.265732     | 0.937518     | 0.132472     | 0.010859       | 1000000       |
+| **mean** | **30000** | **29.434906** | **0.881349** | **0.129207** | **0.014802**   | **1000000**   |
 
 ## Community & Support
 
