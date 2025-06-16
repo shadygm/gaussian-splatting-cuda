@@ -1,6 +1,7 @@
 #include "core/colmap_reader.hpp"
 #include "core/point_cloud.hpp"
 #include "core/torch_shapes.hpp"
+#include "core/image_io.hpp"  // Added for load_image
 #include <algorithm>
 #include <cstring>
 #include <exception>
@@ -185,7 +186,7 @@ std::vector<Image> read_images_binary(const std::filesystem::path& file_path) {
 //  cameras.bin
 // -----------------------------------------------------------------------------
 std::unordered_map<uint32_t, CameraData>
-read_cameras_binary(const std::filesystem::path& file_path) {
+read_cameras_binary(const std::filesystem::path& file_path, float factor = 1.0f) {
     auto buf_owner = read_binary(file_path);
     const char* cur = buf_owner->data();
     const char* end = cur + buf_owner->size();
@@ -202,17 +203,68 @@ read_cameras_binary(const std::filesystem::path& file_path) {
         cam._width = read_u64(cur);
         cam._height = read_u64(cur);
 
+        // Apply downscaling factor to dimensions
+        cam._width = static_cast<uint64_t>(cam._width / factor);
+        cam._height = static_cast<uint64_t>(cam._height / factor);
+
         auto it = camera_model_ids.find(model_id);
         if (it == camera_model_ids.end() || it->second.second < 0)
             throw std::runtime_error("Unsupported camera-model id " + std::to_string(model_id));
 
         cam._camera_model = it->second.first;
         int32_t param_cnt = it->second.second;
-        cam._params = torch::from_blob(const_cast<char*>(cur),
-                                       {param_cnt}, torch::kFloat64)
+
+        // Read parameters and apply scaling
+        std::vector<double> raw_params(param_cnt);
+        for (int j = 0; j < param_cnt; j++) {
+            raw_params[j] = read_f64(cur);
+        }
+
+        // Scale parameters based on camera model
+        switch (cam._camera_model) {
+        case CAMERA_MODEL::SIMPLE_PINHOLE: {
+            // params: [f, cx, cy]
+            raw_params[0] /= factor;  // f
+            raw_params[1] /= factor;  // cx
+            raw_params[2] /= factor;  // cy
+            break;
+        }
+        case CAMERA_MODEL::PINHOLE: {
+            // params: [fx, fy, cx, cy]
+            raw_params[0] /= factor;  // fx
+            raw_params[1] /= factor;  // fy
+            raw_params[2] /= factor;  // cx
+            raw_params[3] /= factor;  // cy
+            break;
+        }
+        case CAMERA_MODEL::SIMPLE_RADIAL:
+        case CAMERA_MODEL::RADIAL: {
+            // params: [f, cx, cy, k1, ...] or [fx, fy, cx, cy, k1, ...]
+            raw_params[0] /= factor;  // f or fx
+            if (cam._camera_model == CAMERA_MODEL::RADIAL) {
+                raw_params[1] /= factor;  // fy
+                raw_params[2] /= factor;  // cx
+                raw_params[3] /= factor;  // cy
+            } else {
+                raw_params[1] /= factor;  // cx
+                raw_params[2] /= factor;  // cy
+            }
+            // Distortion parameters remain unchanged
+            break;
+        }
+        // Add more camera models as needed
+        default:
+            // For unsupported models, at least scale principal point
+            if (param_cnt >= 4) {
+                raw_params[2] /= factor;  // cx
+                raw_params[3] /= factor;  // cy
+            }
+            break;
+        }
+
+        cam._params = torch::from_blob(raw_params.data(), {param_cnt}, torch::kFloat64)
                           .clone()
                           .to(torch::kFloat32);
-        cur += param_cnt * sizeof(double);
 
         cams.emplace(cam._camera_ID, std::move(cam));
     }
@@ -263,13 +315,31 @@ PointCloud read_point3D_binary(const std::filesystem::path& file_path) {
 }
 
 // -----------------------------------------------------------------------------
+//  Extract downscaling factor from folder name
+// -----------------------------------------------------------------------------
+float get_downscale_factor(const std::string& images_folder) {
+    // Check if folder name ends with _N where N is a number
+    size_t underscore_pos = images_folder.rfind('_');
+    if (underscore_pos != std::string::npos) {
+        std::string suffix = images_folder.substr(underscore_pos + 1);
+        try {
+            return std::stof(suffix);
+        } catch (...) {
+            // Not a valid number, no downscaling
+        }
+    }
+    return 1.0f;
+}
+
+// -----------------------------------------------------------------------------
 //  Assemble per-image camera information
 // -----------------------------------------------------------------------------
 std::tuple<std::vector<CameraData>, float>
 read_colmap_cameras(const std::filesystem::path base_path,
                     const std::unordered_map<uint32_t, CameraData>& cams,
                     const std::vector<Image>& images,
-                    const std::string& images_folder = "images") {
+                    const std::string& images_folder,
+                    int resolution) {
     std::vector<CameraData> out(images.size());
 
     std::filesystem::path images_path = base_path / images_folder;
@@ -296,30 +366,123 @@ read_colmap_cameras(const std::filesystem::path base_path,
         out[i]._T = img._tvec.clone();
 
         // Camera location in world space = -R^T * T
-        // This is equivalent to extracting camtoworlds[:, :3, 3] after inverting w2c
         camera_locations[i] = -torch::matmul(out[i]._R.t(), out[i]._T);
 
-        switch (out[i]._camera_model) {
+        // Initialize image dimensions
+        out[i]._img_w = out[i]._img_h = out[i]._channels = 0;
+        out[i]._img_data = nullptr;
+    }
+
+    // Check actual image dimensions and adjust intrinsics if needed
+    if (!out.empty() && std::filesystem::exists(out[0]._image_path)) {
+        // Load first image to get actual dimensions
+        int actual_width, actual_height, channels;
+        unsigned char* img_data;
+
+        // If resolution is specified, images will be resized to that resolution
+        if (resolution > 0) {
+            std::tie(img_data, actual_width, actual_height, channels) =
+                load_image(out[0]._image_path, resolution);
+        } else {
+            std::tie(img_data, actual_width, actual_height, channels) =
+                load_image(out[0]._image_path, -1);  // -1 means no resize
+        }
+
+        // Get expected dimensions from camera params
+        int expected_width = out[0]._width;
+        int expected_height = out[0]._height;
+
+        // Calculate additional scaling factors
+        float s_width = static_cast<float>(actual_width) / expected_width;
+        float s_height = static_cast<float>(actual_height) / expected_height;
+
+        // Free the image data
+        free_image(img_data);
+
+        std::cout << "Image dimension adjustment:" << std::endl;
+        std::cout << "  Actual: " << actual_width << "x" << actual_height << std::endl;
+        std::cout << "  Expected (after factor): " << expected_width << "x" << expected_height << std::endl;
+        std::cout << "  Additional scale factors: " << s_width << ", " << s_height << std::endl;
+
+        // Apply scaling to all cameras if there's a mismatch
+        if (std::abs(s_width - 1.0f) > 1e-5 || std::abs(s_height - 1.0f) > 1e-5) {
+            for (auto& cam : out) {
+                // Update intrinsics based on camera model
+                switch (cam._camera_model) {
+                case CAMERA_MODEL::SIMPLE_PINHOLE: {
+                    // SIMPLE_PINHOLE params: [f, cx, cy]
+                    float f = cam._params[0].item<float>() * s_width;
+                    float cx = cam._params[1].item<float>() * s_width;
+                    float cy = cam._params[2].item<float>() * s_height;
+
+                    cam._params = torch::tensor({f, cx, cy}, torch::kFloat32);
+                    break;
+                }
+                case CAMERA_MODEL::PINHOLE: {
+                    // PINHOLE params: [fx, fy, cx, cy]
+                    float fx = cam._params[0].item<float>() * s_width;
+                    float fy = cam._params[1].item<float>() * s_height;
+                    float cx = cam._params[2].item<float>() * s_width;
+                    float cy = cam._params[3].item<float>() * s_height;
+
+                    cam._params = torch::tensor({fx, fy, cx, cy}, torch::kFloat32);
+                    break;
+                }
+                default:
+                    throw std::runtime_error("Unsupported camera model for scaling adjustment");
+                }
+
+                // Update stored dimensions to actual dimensions
+                cam._width = actual_width;
+                cam._height = actual_height;
+            }
+        }
+    }
+
+    // Now compute FOV and K matrices for all cameras with the final dimensions
+    for (auto& cam : out) {
+        // Compute K matrix
+        torch::Tensor K = torch::zeros({3, 3}, torch::kFloat32);
+
+        switch (cam._camera_model) {
         case CAMERA_MODEL::SIMPLE_PINHOLE: {
-            float fx = out[i]._params[0].item<float>();
-            out[i]._fov_x = focal2fov(fx, out[i]._width);
-            out[i]._fov_y = focal2fov(fx, out[i]._height);
+            float f = cam._params[0].item<float>();
+            float cx = cam._params[1].item<float>();
+            float cy = cam._params[2].item<float>();
+
+            K[0][0] = f;
+            K[1][1] = f;
+            K[0][2] = cx;
+            K[1][2] = cy;
+            K[2][2] = 1.0f;
+
+            cam._fov_x = focal2fov(f, cam._width);
+            cam._fov_y = focal2fov(f, cam._height);
             break;
         }
         case CAMERA_MODEL::PINHOLE: {
-            float fx = out[i]._params[0].item<float>();
-            float fy = out[i]._params[1].item<float>();
-            out[i]._fov_x = focal2fov(fx, out[i]._width);
-            out[i]._fov_y = focal2fov(fy, out[i]._height);
+            float fx = cam._params[0].item<float>();
+            float fy = cam._params[1].item<float>();
+            float cx = cam._params[2].item<float>();
+            float cy = cam._params[3].item<float>();
+
+            K[0][0] = fx;
+            K[1][1] = fy;
+            K[0][2] = cx;
+            K[1][2] = cy;
+            K[2][2] = 1.0f;
+
+            cam._fov_x = focal2fov(fx, cam._width);
+            cam._fov_y = focal2fov(fy, cam._height);
             break;
         }
         default:
             throw std::runtime_error("Unsupported camera model");
         }
 
-        out[i]._img_w = out[i]._img_h = out[i]._channels = 0;
-        out[i]._img_data = nullptr;
+        cam._K = K;
     }
+
     float scene_scale = 1.0f;
     if (!images.empty()) {
         torch::Tensor scene_center = camera_locations.mean(0);                    // [3]
@@ -341,10 +504,16 @@ PointCloud read_colmap_point_cloud(const std::filesystem::path& filepath) {
 
 std::tuple<std::vector<CameraData>, float> read_colmap_cameras_and_images(
     const std::filesystem::path& base,
-    const std::string& images_folder) {
+    const std::string& images_folder,
+    const int resolution) {
 
-    auto cams = read_cameras_binary(base / "sparse/0/cameras.bin");
+    // Extract downscaling factor from folder name
+    float factor = get_downscale_factor(images_folder);
+
+    std::cout << "Reading COLMAP data with downscale factor: " << factor << std::endl;
+
+    auto cams = read_cameras_binary(base / "sparse/0/cameras.bin", factor);
     auto images = read_images_binary(base / "sparse/0/images.bin");
 
-    return read_colmap_cameras(base, cams, images, images_folder);
+    return read_colmap_cameras(base, cams, images, images_folder, resolution);
 }

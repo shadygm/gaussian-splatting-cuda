@@ -70,17 +70,19 @@ namespace {
             resultSet.init(&ret_indices[0], &out_dists_sqr[0]);
             index.findNeighbors(resultSet, &query_pt[0], nanoflann::SearchParameters(10));
 
-            float sum_dist = 0.0f;
+            float sum_dist_sqr = 0.0f;  // FIX 2: Sum squared distances
             int valid_neighbors = 0;
 
-            for (size_t j = 0; j < num_results && valid_neighbors < 3; j++) {
-                if (out_dists_sqr[j] > 1e-8f) {
-                    sum_dist += std::sqrt(out_dists_sqr[j]);
+            // Skip first result (self) and collect next 3
+            for (size_t j = 1; j < num_results && valid_neighbors < 3; j++) {
+                if (ret_indices[j] != static_cast<size_t>(i)) {  // Additional check for self
+                    sum_dist_sqr += out_dists_sqr[j];  // Keep squared
                     valid_neighbors++;
                 }
             }
 
-            result_data[i] = (valid_neighbors > 0) ? (sum_dist / valid_neighbors) : 0.01f;
+            // FIX 2: Take sqrt of mean of squared distances (RMS)
+            result_data[i] = (valid_neighbors > 0) ? std::sqrt(sum_dist_sqr / valid_neighbors) : 0.01f;
         }
 
         return result.to(points.device());
@@ -348,48 +350,47 @@ SplatData SplatData::init_model_from_pointcloud(const gs::param::TrainingParamet
     // 1. means - already a tensor, just move to CUDA and set requires_grad
     auto means = pcd.means.to(torch::kCUDA).set_requires_grad(true);
 
-    // 2. scaling (log(σ)) - compute nearest neighbor distances
+    // 2. FIX 2: scaling calculation now matches Python (RMS is handled in compute_mean_neighbor_distances)
     auto nn_dist = torch::clamp_min(compute_mean_neighbor_distances(means), 1e-7);
-    auto scaling = torch::log(torch::sqrt(nn_dist) * params.optimization.init_scaling)
+    auto scaling = torch::log(nn_dist * params.optimization.init_scaling)  // No need for extra sqrt
                        .unsqueeze(-1)
                        .repeat({1, 3})
                        .to(f32_cuda)
                        .set_requires_grad(true);
 
-    // 3. rotation (quaternion, identity) - split into multiple lines to avoid compilation error
-    auto rotation = torch::zeros({means.size(0), 4}, f32_cuda);
-    rotation.index_put_({torch::indexing::Slice(), 0}, 1);
-    rotation = rotation.set_requires_grad(true);
+    // 3. FIX 3: rotation - random quaternions instead of identity
+    auto rotation = torch::rand({means.size(0), 4}, f32_cuda).set_requires_grad(true);
 
-    // 4. opacity (inverse sigmoid of 0.5)
+    // 4. opacity (inverse sigmoid)
     auto opacity = torch::logit(params.optimization.init_opacity * torch::ones({means.size(0), 1}, f32_cuda))
                        .set_requires_grad(true);
 
-    // 5. shs (SH coefficients)
+    // 5. FIX 4: shs - match Python's organization [N, K, 3]
     // Colors are already normalized to float by pcd.normalize_colors()
     auto colors_float = pcd.colors.to(torch::kCUDA);
     auto fused_color = rgb_to_sh(colors_float);
 
     const int64_t feature_shape = static_cast<int64_t>(std::pow(params.optimization.sh_degree + 1, 2));
-    auto shs = torch::zeros({fused_color.size(0), 3, feature_shape}, f32_cuda);
+
+    // Initialize directly in [N, K, 3] format
+    auto shs = torch::zeros({fused_color.size(0), feature_shape, 3}, f32_cuda);
 
     // Set DC coefficients
     shs.index_put_({torch::indexing::Slice(),
-                    torch::indexing::Slice(),
-                    0},
+                    0,
+                    torch::indexing::Slice()},
                    fused_color);
 
+    // Split into sh0 and shN
     auto sh0 = shs.index({torch::indexing::Slice(),
-                          torch::indexing::Slice(),
-                          torch::indexing::Slice(0, 1)})
-                   .transpose(1, 2)
+                          torch::indexing::Slice(0, 1),
+                          torch::indexing::Slice()})
                    .contiguous()
                    .set_requires_grad(true);
 
     auto shN = shs.index({torch::indexing::Slice(),
-                          torch::indexing::Slice(),
-                          torch::indexing::Slice(1, torch::indexing::None)})
-                   .transpose(1, 2)
+                          torch::indexing::Slice(1, torch::indexing::None),
+                          torch::indexing::Slice()})
                    .contiguous()
                    .set_requires_grad(true);
 

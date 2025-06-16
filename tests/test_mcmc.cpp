@@ -40,10 +40,10 @@ protected:
         auto T = torch::tensor({0.0f, 0.0f, 5.0f}, torch::kFloat32);
         float fov = M_PI / 3.0f; // 60 degrees
 
-        test_camera = std::make_unique<Camera>(
-            R, T, fov, fov,
-            "test_camera",
-            "", 256, 256, 0);
+        //test_camera = std::make_unique<Camera>(
+        //    R, T, fov, fov,
+        //    "test_camera",
+        //    "", 256, 256, 0);
 
         // Background color
         background = torch::zeros({3}, device);

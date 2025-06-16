@@ -24,6 +24,7 @@ struct CameraData {
     uint32_t _camera_ID = 0;
     torch::Tensor _R = torch::eye(3, torch::kFloat32);
     torch::Tensor _T = torch::zeros({3}, torch::kFloat32);
+    torch::Tensor _K = torch::eye(3, torch::kFloat32);
     float _fov_x = 0.f;
     float _fov_y = 0.f;
     std::string _image_name;
@@ -42,7 +43,8 @@ struct CameraData {
 // Read COLMAP cameras, images, and compute nerf norm
 std::tuple<std::vector<CameraData>, float> read_colmap_cameras_and_images(
     const std::filesystem::path& base,
-    const std::string& images_folder = "images");
+    const std::string& images_folder = "images",
+    const int resolution = -1);
 
 // Read COLMAP point cloud
 PointCloud read_colmap_point_cloud(const std::filesystem::path& filepath);

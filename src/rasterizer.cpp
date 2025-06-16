@@ -109,7 +109,7 @@ namespace gs {
 
         const float eps2d = 0.3f;
         const float near_plane = 0.01f;
-        const float far_plane = 10000.0f;
+        const float far_plane = 1e10f;
         const float radius_clip = 0.0f;
         const int tile_size = 16;
         const bool calc_compensations = antialiased;

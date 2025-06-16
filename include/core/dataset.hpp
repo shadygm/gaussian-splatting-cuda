@@ -93,7 +93,7 @@ inline std::tuple<std::shared_ptr<CameraDataset>, float> create_dataset_from_col
 
     // Read COLMAP data with specified images folder
     auto [camera_infos, scene_scale] = read_colmap_cameras_and_images(
-        datasetConfig.data_path, datasetConfig.images);
+        datasetConfig.data_path, datasetConfig.images, datasetConfig.resolution);
 
     std::vector<std::shared_ptr<Camera>> cameras;
     cameras.reserve(camera_infos.size());
@@ -104,6 +104,7 @@ inline std::tuple<std::shared_ptr<CameraDataset>, float> create_dataset_from_col
         auto cam = std::make_shared<Camera>(
             info._R,
             info._T,
+            info._K,          // Pass the pre-computed K matrix
             info._fov_x,
             info._fov_y,
             info._image_name,

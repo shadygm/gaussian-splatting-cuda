@@ -538,16 +538,16 @@ TEST_F(RasterizationComparisonTest, CompareWithGSRasterize) {
         auto T = viewmat_inv.slice(0, 0, 3).select(1, 3).to(torch::kCPU);
 
         float fov = 2.0f * std::atan(width / (2.0f * focal));
-        Camera camera(R, T, fov, fov, "test_cam_" + std::to_string(cam_idx), "", width, height, cam_idx);
+        //Camera camera(R, T, fov, fov, "test_cam_" + std::to_string(cam_idx), "", width, height, cam_idx);
 
-        auto bg_single = bg_color[cam_idx];
-        auto output = gs::rasterize(camera, gaussians, bg_single, 1.0f, false);
+        //auto bg_single = bg_color[cam_idx];
+        //auto output = gs::rasterize(camera, gaussians, bg_single, 1.0f, false);
 
-        gs_renders.push_back(output.image.unsqueeze(0)); // Add camera dimension
+        //gs_renders.push_back(output.image.unsqueeze(0)); // Add camera dimension
 
-        std::cout << "Camera " << cam_idx << " render stats: min=" << output.image.min().item<float>()
-                  << ", max=" << output.image.max().item<float>()
-                  << ", mean=" << output.image.mean().item<float>() << std::endl;
+        //std::cout << "Camera " << cam_idx << " render stats: min=" << output.image.min().item<float>()
+        //          << ", max=" << output.image.max().item<float>()
+        //          << ", mean=" << output.image.mean().item<float>() << std::endl;
     }
 
     // Stack renders

@@ -12,6 +12,7 @@ public:
 
     Camera(const torch::Tensor& R,
            const torch::Tensor& T,
+           const torch::Tensor& K,  // Pass K directly
            float FoVx, float FoVy,
            const std::string& image_name,
            const std::filesystem::path& image_path,
@@ -49,6 +50,9 @@ private:
     int _uid = -1;
     float _FoVx = 0.f;
     float _FoVy = 0.f;
+
+    // Camera intrinsics
+    torch::Tensor _K;
 
     // Image info
     std::string _image_name;

@@ -74,11 +74,14 @@ namespace {
         }
 
         auto& adam_state = static_cast<torch::optim::AdamParamState&>(*state_it->second);
-        adam_state.exp_avg().index_put_({indices}, 0);
-        adam_state.exp_avg_sq().index_put_({indices}, 0);
+
+        // Use safe indexing that preserves tensor shape
+        const auto zero_tensor = torch::zeros_like(adam_state.exp_avg().index_select(0, indices));
+        adam_state.exp_avg().index_put_({indices}, zero_tensor);
+        adam_state.exp_avg_sq().index_put_({indices}, torch::zeros_like(adam_state.exp_avg_sq().index_select(0, indices)));
 
         if (adam_state.max_exp_avg_sq().defined()) {
-            adam_state.max_exp_avg_sq().index_put_({indices}, 0);
+            adam_state.max_exp_avg_sq().index_put_({indices}, torch::zeros_like(adam_state.max_exp_avg_sq().index_select(0, indices)));
         }
     }
 
@@ -343,11 +346,9 @@ void MCMC::post_backward(const int iter, gs::RenderOutput& render_output) {
 }
 
 void MCMC::step(const int iter) {
-    if (iter < _params->iterations) {
-        _optimizer->step();
-        _optimizer->zero_grad(true);
-        _scheduler->step();
-    }
+    _optimizer->step();
+    _optimizer->zero_grad(true);
+    _scheduler->step();
 }
 
 void MCMC::initialize(const gs::param::OptimizationParameters& optimParams) {
