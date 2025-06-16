@@ -4,43 +4,50 @@
 #include "core/parameters.hpp"
 #include "core/rasterizer.hpp"
 #include <c10/cuda/CUDACachingAllocator.h>
-#include <exception>
 #include <iostream>
 #include <random>
 
-MCMC::MCMC(SplatData&& splat_data)
-    : _splat_data(std::move(splat_data)) {
-}
+namespace {
 
-torch::Tensor MCMC::multinomial_sample(const torch::Tensor& weights, int n, bool replacement) {
-    const int64_t num_elements = weights.size(0);
+    // Constants
+    constexpr int64_t MULTINOMIAL_LIMIT = 1 << 24;
+    constexpr float MIN_OPACITY_CLAMP = 1e-7f;
+    constexpr float NOISE_K = 100.0f;
+    constexpr float NOISE_X0 = 0.995f;
 
-    // PyTorch's multinomial has a limit of 2^24 elements
-    if (num_elements <= (1 << 24)) {
-        return torch::multinomial(weights, n, replacement);
-    } else {
-        // For larger arrays, we need to implement sampling manually
-        auto weights_normalized = weights / weights.sum();
-        auto weights_cpu = weights_normalized.cpu();
+    // Helper to handle opacity tensor shapes consistently
+    torch::Tensor normalize_opacity_shape(const torch::Tensor& opacity) {
+        return (opacity.dim() == 2 && opacity.size(1) == 1) ? opacity.squeeze(-1) : opacity;
+    }
+
+    // Multinomial sampling implementation
+    torch::Tensor multinomial_sample(const torch::Tensor& weights, const int n, const bool replacement = true) {
+        const int64_t num_elements = weights.size(0);
+
+        if (num_elements <= MULTINOMIAL_LIMIT) {
+            return torch::multinomial(weights, n, replacement);
+        }
+
+        // For larger arrays, implement sampling manually
+        const auto weights_normalized = weights / weights.sum();
+        const auto weights_cpu = weights_normalized.cpu();
+        const auto cumsum = weights_cpu.cumsum(0);
+        const auto cumsum_data = cumsum.accessor<float, 1>();
 
         std::vector<int64_t> sampled_indices;
         sampled_indices.reserve(n);
-
-        // Create cumulative distribution
-        auto cumsum = weights_cpu.cumsum(0);
-        auto cumsum_data = cumsum.accessor<float, 1>();
 
         std::random_device rd;
         std::mt19937 gen(rd());
         std::uniform_real_distribution<float> dis(0.0, 1.0);
 
         for (int i = 0; i < n; ++i) {
-            float u = dis(gen);
-            // Binary search for the index
+            const float u = dis(gen);
+            // Binary search
             int64_t idx = 0;
             int64_t left = 0, right = num_elements - 1;
             while (left <= right) {
-                int64_t mid = (left + right) / 2;
+                const int64_t mid = (left + right) / 2;
                 if (cumsum_data[mid] < u) {
                     left = mid + 1;
                 } else {
@@ -51,124 +58,159 @@ torch::Tensor MCMC::multinomial_sample(const torch::Tensor& weights, int n, bool
             sampled_indices.push_back(idx);
         }
 
-        auto result = torch::tensor(sampled_indices, torch::kLong);
-        return result.to(weights.device());
-    }
-}
-
-void MCMC::update_optimizer_for_relocate(torch::optim::Adam* optimizer,
-                                         const torch::Tensor& sampled_indices,
-                                         const torch::Tensor& dead_indices,
-                                         int param_position) {
-    // Get the parameter
-    auto& param = optimizer->param_groups()[param_position].params()[0];
-    void* param_key = param.unsafeGetTensorImpl();
-
-    // Check if optimizer state exists
-    auto state_it = optimizer->state().find(param_key);
-    if (state_it == optimizer->state().end()) {
-        // No state exists yet - this can happen if optimizer.step() hasn't been called
-        // In this case, there's nothing to reset, so we can safely return
-        return;
+        return torch::tensor(sampled_indices, torch::kLong).to(weights.device());
     }
 
-    // Get the optimizer state
-    auto& param_state = *state_it->second;
-    auto& adam_state = static_cast<torch::optim::AdamParamState&>(param_state);
+    // Reset Adam optimizer state for specific indices
+    void reset_adam_state_at_indices(torch::optim::Adam* optimizer,
+                                     const torch::Tensor& indices,
+                                     const int param_position) {
+        auto& param = optimizer->param_groups()[param_position].params()[0];
+        void* const param_key = param.unsafeGetTensorImpl();
 
-    // Reset the states for sampled indices (set to zero)
-    adam_state.exp_avg().index_put_({sampled_indices}, 0);
-    adam_state.exp_avg_sq().index_put_({sampled_indices}, 0);
+        const auto state_it = optimizer->state().find(param_key);
+        if (state_it == optimizer->state().end()) {
+            return; // No state exists yet
+        }
 
-    // Also reset max_exp_avg_sq if it exists (used in some Adam variants)
-    if (adam_state.max_exp_avg_sq().defined()) {
-        adam_state.max_exp_avg_sq().index_put_({sampled_indices}, 0);
+        auto& adam_state = static_cast<torch::optim::AdamParamState&>(*state_it->second);
+        adam_state.exp_avg().index_put_({indices}, 0);
+        adam_state.exp_avg_sq().index_put_({indices}, 0);
+
+        if (adam_state.max_exp_avg_sq().defined()) {
+            adam_state.max_exp_avg_sq().index_put_({indices}, 0);
+        }
     }
+
+    // Calculate ratios for relocation
+    torch::Tensor calculate_relocation_ratios(const torch::Tensor& sampled_indices,
+                                              const torch::Tensor& opacities,
+                                              const int n_max) {
+        auto ratios = torch::zeros({opacities.size(0)}, torch::kFloat32).to(torch::kCUDA);
+        ratios.index_add_(0, sampled_indices, torch::ones_like(sampled_indices, torch::kFloat32));
+        ratios = ratios.index_select(0, sampled_indices) + 1;
+        return torch::clamp(ratios, 1, n_max).to(torch::kInt32).contiguous();
+    }
+
+    // Update opacity raw tensor based on its dimensionality
+    void update_opacity_raw(torch::Tensor& opacity_raw,
+                            const torch::Tensor& indices,
+                            const torch::Tensor& new_opacities,
+                            const float min_opacity) {
+        const auto clamped = torch::clamp(new_opacities, min_opacity, 1.0f - MIN_OPACITY_CLAMP);
+        if (opacity_raw.dim() == 2) {
+            opacity_raw.index_put_({indices, torch::indexing::Slice()},
+                                   torch::logit(clamped).unsqueeze(-1));
+        } else {
+            opacity_raw.index_put_({indices}, torch::logit(clamped));
+        }
+    }
+
+    // Initialize binomial coefficients
+    torch::Tensor init_binomial_coefficients(const int n_max, const torch::Device device) {
+        auto binoms = torch::zeros({n_max, n_max}, torch::kFloat32);
+        auto binoms_accessor = binoms.accessor<float, 2>();
+
+        for (int n = 0; n < n_max; ++n) {
+            for (int k = 0; k <= n; ++k) {
+                float binom = 1.0f;
+                for (int i = 0; i < k; ++i) {
+                    binom *= static_cast<float>(n - i) / static_cast<float>(i + 1);
+                }
+                binoms_accessor[n][k] = binom;
+            }
+        }
+        return binoms.to(device);
+    }
+
+    // Extend Adam optimizer state for concatenated parameters
+    std::unique_ptr<torch::optim::AdamParamState> extend_adam_state(
+        const torch::optim::AdamParamState& old_state,
+        const torch::IntArrayRef new_shape) {
+
+        const auto zeros_to_add = torch::zeros(new_shape, old_state.exp_avg().options());
+
+        auto new_state = std::make_unique<torch::optim::AdamParamState>();
+        new_state->step(old_state.step());
+        new_state->exp_avg(torch::cat({old_state.exp_avg(), zeros_to_add}, 0));
+        new_state->exp_avg_sq(torch::cat({old_state.exp_avg_sq(), zeros_to_add}, 0));
+
+        if (old_state.max_exp_avg_sq().defined()) {
+            new_state->max_exp_avg_sq(torch::cat({old_state.max_exp_avg_sq(), zeros_to_add}, 0));
+        }
+
+        return new_state;
+    }
+
+} // anonymous namespace
+
+MCMC::MCMC(SplatData&& splat_data) : _splat_data(std::move(splat_data)) {}
+
+void MCMC::ExponentialLR::step() {
+    auto& group = optimizer_.param_groups()[param_group_index_];
+    auto& options = static_cast<torch::optim::AdamOptions&>(group.options());
+    options.lr(options.lr() * gamma_);
 }
 
 int MCMC::relocate_gs() {
-    // Get opacities and handle both [N] and [N, 1] shapes
     torch::NoGradGuard no_grad;
-    auto opacities = _splat_data.get_opacity();
-    if (opacities.dim() == 2 && opacities.size(1) == 1) {
-        opacities = opacities.squeeze(-1);
-    }
 
-    auto dead_mask = opacities <= _params->min_opacity;
-    auto dead_indices = dead_mask.nonzero().squeeze(-1);
-    int n_dead = dead_indices.numel();
+    const auto opacities = normalize_opacity_shape(_splat_data.get_opacity());
+    const auto dead_mask = opacities <= _params->min_opacity;
+    const auto dead_indices = dead_mask.nonzero().squeeze(-1);
 
-    if (n_dead == 0)
+    if (dead_indices.numel() == 0)
         return 0;
 
-    auto alive_mask = ~dead_mask;
-    auto alive_indices = alive_mask.nonzero().squeeze(-1);
+    const auto alive_mask = ~dead_mask;
+    const auto alive_indices = alive_mask.nonzero().squeeze(-1);
 
     if (alive_indices.numel() == 0)
         return 0;
 
-    // Sample from alive Gaussians based on opacity
-    auto probs = opacities.index_select(0, alive_indices);
-    auto sampled_idxs_local = multinomial_sample(probs, n_dead, true);
-    auto sampled_idxs = alive_indices.index_select(0, sampled_idxs_local);
+    // Sample from alive Gaussians
+    const auto probs = opacities.index_select(0, alive_indices);
+    const auto sampled_idxs_local = multinomial_sample(probs, dead_indices.numel(), true);
+    const auto sampled_idxs = alive_indices.index_select(0, sampled_idxs_local);
 
-    // Get parameters for sampled Gaussians
-    auto sampled_opacities = opacities.index_select(0, sampled_idxs);
-    auto sampled_scales = _splat_data.get_scaling().index_select(0, sampled_idxs);
+    // Calculate ratios for relocation
+    const auto ratios = calculate_relocation_ratios(sampled_idxs, opacities, _binoms.size(0));
 
-    // Count occurrences of each sampled index
-    auto ratios = torch::zeros({opacities.size(0)}, torch::kFloat32).to(torch::kCUDA);
-    ratios.index_add_(0, sampled_idxs, torch::ones_like(sampled_idxs, torch::kFloat32));
-    ratios = ratios.index_select(0, sampled_idxs) + 1;
-
-    // IMPORTANT: Clamp and convert to int as in Python implementation
-    const int n_max = static_cast<int>(_binoms.size(0));
-    ratios = torch::clamp(ratios, 1, n_max);
-    ratios = ratios.to(torch::kInt32).contiguous(); // Convert to int!
-
-    // Call the CUDA relocation function from gsplat
-    auto relocation_result = gsplat::relocation(
-        sampled_opacities,
-        sampled_scales,
+    // Relocate using gsplat
+    const auto [new_opacities, new_scales] = gsplat::relocation(
+        opacities.index_select(0, sampled_idxs),
+        _splat_data.get_scaling().index_select(0, sampled_idxs),
         ratios,
         _binoms,
-        n_max);
-
-    auto new_opacities = std::get<0>(relocation_result);
-    auto new_scales = std::get<1>(relocation_result);
-
-    // Clamp new opacities
-    new_opacities = torch::clamp(new_opacities, _params->min_opacity, 1.0f - 1e-7f);
+        _binoms.size(0));
 
     // Update parameters for sampled indices
-    // Handle opacity shape properly
-    if (_splat_data.opacity_raw().dim() == 2) {
-        _splat_data.opacity_raw().index_put_({sampled_idxs, torch::indexing::Slice()},
-                                             torch::logit(new_opacities).unsqueeze(-1));
-    } else {
-        _splat_data.opacity_raw().index_put_({sampled_idxs}, torch::logit(new_opacities));
-    }
+    update_opacity_raw(_splat_data.opacity_raw(), sampled_idxs, new_opacities, _params->min_opacity);
     _splat_data.scaling_raw().index_put_({sampled_idxs}, torch::log(new_scales));
 
     // Copy from sampled to dead indices
-    _splat_data.means().index_put_({dead_indices}, _splat_data.means().index_select(0, sampled_idxs));
-    _splat_data.sh0().index_put_({dead_indices}, _splat_data.sh0().index_select(0, sampled_idxs));
-    _splat_data.shN().index_put_({dead_indices}, _splat_data.shN().index_select(0, sampled_idxs));
-    _splat_data.scaling_raw().index_put_({dead_indices}, _splat_data.scaling_raw().index_select(0, sampled_idxs));
-    _splat_data.rotation_raw().index_put_({dead_indices}, _splat_data.rotation_raw().index_select(0, sampled_idxs));
-    _splat_data.opacity_raw().index_put_({dead_indices}, _splat_data.opacity_raw().index_select(0, sampled_idxs));
+    auto copy_param = [&](torch::Tensor& param) {
+        param.index_put_({dead_indices}, param.index_select(0, sampled_idxs));
+    };
 
-    // Update optimizer states for sampled indices
+    copy_param(_splat_data.means());
+    copy_param(_splat_data.sh0());
+    copy_param(_splat_data.shN());
+    copy_param(_splat_data.scaling_raw());
+    copy_param(_splat_data.rotation_raw());
+    copy_param(_splat_data.opacity_raw());
+
+    // Reset optimizer states for all parameters
     for (int i = 0; i < 6; ++i) {
-        update_optimizer_for_relocate(_optimizer.get(), sampled_idxs, dead_indices, i);
+        reset_adam_state_at_indices(_optimizer.get(), sampled_idxs, i);
     }
 
-    return n_dead;
+    return dead_indices.numel();
 }
 
 int MCMC::add_new_gs() {
-    // Add this check at the beginning
     torch::NoGradGuard no_grad;
+
     if (!_optimizer) {
         std::cerr << "Warning: add_new_gs called but optimizer not initialized" << std::endl;
         return 0;
@@ -181,215 +223,126 @@ int MCMC::add_new_gs() {
     if (n_new == 0)
         return 0;
 
-    // Get opacities and handle both [N] and [N, 1] shapes
-    auto opacities = _splat_data.get_opacity();
-    if (opacities.dim() == 2 && opacities.size(1) == 1) {
-        opacities = opacities.squeeze(-1);
-    }
+    const auto opacities = normalize_opacity_shape(_splat_data.get_opacity());
+    const auto sampled_idxs = multinomial_sample(opacities.flatten(), n_new, true);
 
-    auto probs = opacities.flatten();
-    auto sampled_idxs = multinomial_sample(probs, n_new, true);
+    // Calculate ratios for relocation
+    const auto ratios = calculate_relocation_ratios(sampled_idxs, opacities, _binoms.size(0));
 
-    // Get parameters for sampled Gaussians
-    auto sampled_opacities = opacities.index_select(0, sampled_idxs);
-    auto sampled_scales = _splat_data.get_scaling().index_select(0, sampled_idxs);
-
-    // Count occurrences
-    auto ratios = torch::zeros({opacities.size(0)}, torch::kFloat32).to(torch::kCUDA);
-    ratios.index_add_(0, sampled_idxs, torch::ones_like(sampled_idxs, torch::kFloat32));
-    ratios = ratios.index_select(0, sampled_idxs) + 1;
-
-    // IMPORTANT: Clamp and convert to int as in Python implementation
-    const int n_max = static_cast<int>(_binoms.size(0));
-    ratios = torch::clamp(ratios, 1, n_max);
-    ratios = ratios.to(torch::kInt32).contiguous(); // Convert to int!
-
-    // Call the CUDA relocation function from gsplat
-    auto relocation_result = gsplat::relocation(
-        sampled_opacities,
-        sampled_scales,
+    // Relocate using gsplat
+    const auto [new_opacities, new_scales] = gsplat::relocation(
+        opacities.index_select(0, sampled_idxs),
+        _splat_data.get_scaling().index_select(0, sampled_idxs),
         ratios,
         _binoms,
-        n_max);
+        _binoms.size(0));
 
-    auto new_opacities = std::get<0>(relocation_result);
-    auto new_scales = std::get<1>(relocation_result);
-
-    // Clamp new opacities
-    new_opacities = torch::clamp(new_opacities, _params->min_opacity, 1.0f - 1e-7f);
-
-    // Update existing Gaussians FIRST (before concatenation)
-    if (_splat_data.opacity_raw().dim() == 2) {
-        _splat_data.opacity_raw().index_put_({sampled_idxs, torch::indexing::Slice()},
-                                             torch::logit(new_opacities).unsqueeze(-1));
-    } else {
-        _splat_data.opacity_raw().index_put_({sampled_idxs}, torch::logit(new_opacities));
-    }
+    // Update existing Gaussians first
+    update_opacity_raw(_splat_data.opacity_raw(), sampled_idxs, new_opacities, _params->min_opacity);
     _splat_data.scaling_raw().index_put_({sampled_idxs}, torch::log(new_scales));
 
-    // Prepare new Gaussians to concatenate
-    auto new_means = _splat_data.means().index_select(0, sampled_idxs);
-    auto new_sh0 = _splat_data.sh0().index_select(0, sampled_idxs);
-    auto new_shN = _splat_data.shN().index_select(0, sampled_idxs);
-    auto new_scaling = _splat_data.scaling_raw().index_select(0, sampled_idxs);
-    auto new_rotation = _splat_data.rotation_raw().index_select(0, sampled_idxs);
-    auto new_opacity = _splat_data.opacity_raw().index_select(0, sampled_idxs);
+    // Prepare concatenated parameters
+    struct ParamPair {
+        torch::Tensor* model_param;
+        torch::Tensor concatenated;
+    };
 
-    // Step 1: Concatenate all parameters
-    auto concat_means = torch::cat({_splat_data.means(), new_means}, 0).set_requires_grad(true);
-    auto concat_sh0 = torch::cat({_splat_data.sh0(), new_sh0}, 0).set_requires_grad(true);
-    auto concat_shN = torch::cat({_splat_data.shN(), new_shN}, 0).set_requires_grad(true);
-    auto concat_scaling = torch::cat({_splat_data.scaling_raw(), new_scaling}, 0).set_requires_grad(true);
-    auto concat_rotation = torch::cat({_splat_data.rotation_raw(), new_rotation}, 0).set_requires_grad(true);
-    auto concat_opacity = torch::cat({_splat_data.opacity_raw(), new_opacity}, 0).set_requires_grad(true);
+    std::array<ParamPair, 6> param_pairs = {{{&_splat_data.means(), torch::cat({_splat_data.means(), _splat_data.means().index_select(0, sampled_idxs)}, 0).set_requires_grad(true)},
+                                             {&_splat_data.sh0(), torch::cat({_splat_data.sh0(), _splat_data.sh0().index_select(0, sampled_idxs)}, 0).set_requires_grad(true)},
+                                             {&_splat_data.shN(), torch::cat({_splat_data.shN(), _splat_data.shN().index_select(0, sampled_idxs)}, 0).set_requires_grad(true)},
+                                             {&_splat_data.scaling_raw(), torch::cat({_splat_data.scaling_raw(), _splat_data.scaling_raw().index_select(0, sampled_idxs)}, 0).set_requires_grad(true)},
+                                             {&_splat_data.rotation_raw(), torch::cat({_splat_data.rotation_raw(), _splat_data.rotation_raw().index_select(0, sampled_idxs)}, 0).set_requires_grad(true)},
+                                             {&_splat_data.opacity_raw(), torch::cat({_splat_data.opacity_raw(), _splat_data.opacity_raw().index_select(0, sampled_idxs)}, 0).set_requires_grad(true)}}};
 
-    // Step 2: SAFER optimizer state update
-    // Store the new parameters in a temporary array first
-    std::array<torch::Tensor*, 6> new_params = {
-        &concat_means, &concat_sh0, &concat_shN,
-        &concat_scaling, &concat_rotation, &concat_opacity};
-
-    // Collect old parameter keys and states
+    // Update optimizer states
     std::vector<void*> old_param_keys;
     std::vector<std::unique_ptr<torch::optim::OptimizerParamState>> saved_states;
 
     for (int i = 0; i < 6; ++i) {
         auto& old_param = _optimizer->param_groups()[i].params()[0];
-        void* old_param_key = old_param.unsafeGetTensorImpl();
+        void* const old_param_key = old_param.unsafeGetTensorImpl();
         old_param_keys.push_back(old_param_key);
 
-        // Check if state exists
-        auto state_it = _optimizer->state().find(old_param_key);
+        const auto state_it = _optimizer->state().find(old_param_key);
         if (state_it != _optimizer->state().end()) {
-            // Clone the state before modifying
-            auto& adam_state = static_cast<torch::optim::AdamParamState&>(*state_it->second);
+            const auto& adam_state = static_cast<torch::optim::AdamParamState&>(*state_it->second);
 
-            // Create extended states
-            torch::IntArrayRef new_shape;
-            if (i == 0)
-                new_shape = new_means.sizes();
-            else if (i == 1)
-                new_shape = new_sh0.sizes();
-            else if (i == 2)
-                new_shape = new_shN.sizes();
-            else if (i == 3)
-                new_shape = new_scaling.sizes();
-            else if (i == 4)
-                new_shape = new_rotation.sizes();
-            else
-                new_shape = new_opacity.sizes();
-
-            auto zeros_to_add = torch::zeros(new_shape, adam_state.exp_avg().options());
-            auto new_exp_avg = torch::cat({adam_state.exp_avg(), zeros_to_add}, 0);
-            auto new_exp_avg_sq = torch::cat({adam_state.exp_avg_sq(), zeros_to_add}, 0);
-
-            // Create new state
-            auto new_state = std::make_unique<torch::optim::AdamParamState>();
-            new_state->step(adam_state.step());
-            new_state->exp_avg(new_exp_avg);
-            new_state->exp_avg_sq(new_exp_avg_sq);
-            if (adam_state.max_exp_avg_sq().defined()) {
-                auto new_max_exp_avg_sq = torch::cat({adam_state.max_exp_avg_sq(), zeros_to_add}, 0);
-                new_state->max_exp_avg_sq(new_max_exp_avg_sq);
+            // Build shape for new elements based on actual tensor dimensions
+            std::vector<int64_t> new_shape;
+            new_shape.push_back(n_new);
+            for (int64_t d = 1; d < param_pairs[i].concatenated.dim(); ++d) {
+                new_shape.push_back(param_pairs[i].concatenated.size(d));
             }
 
-            saved_states.push_back(std::move(new_state));
+            saved_states.push_back(extend_adam_state(adam_state, new_shape));
         } else {
             saved_states.push_back(nullptr);
         }
     }
 
-    // Now remove all old states
-    for (auto key : old_param_keys) {
+    // Clear old states
+    for (const auto key : old_param_keys) {
         _optimizer->state().erase(key);
     }
 
-    // Update parameters and add new states
+    // Update parameters and states
     for (int i = 0; i < 6; ++i) {
-        _optimizer->param_groups()[i].params()[0] = *new_params[i];
+        _optimizer->param_groups()[i].params()[0] = param_pairs[i].concatenated;
+        *param_pairs[i].model_param = param_pairs[i].concatenated;
 
         if (saved_states[i]) {
-            void* new_param_key = new_params[i]->unsafeGetTensorImpl();
+            void* const new_param_key = param_pairs[i].concatenated.unsafeGetTensorImpl();
             _optimizer->state()[new_param_key] = std::move(saved_states[i]);
         }
     }
-
-    // Step 3: Finally update the model's parameters
-    _splat_data.means() = concat_means;
-    _splat_data.sh0() = concat_sh0;
-    _splat_data.shN() = concat_shN;
-    _splat_data.scaling_raw() = concat_scaling;
-    _splat_data.rotation_raw() = concat_rotation;
-    _splat_data.opacity_raw() = concat_opacity;
 
     return n_new;
 }
 
 void MCMC::inject_noise() {
-    // Get opacities and handle both [N] and [N, 1] shapes
     torch::NoGradGuard no_grad;
 
-    auto opacities = _splat_data.get_opacity();
-    if (opacities.dim() == 2 && opacities.size(1) == 1) {
-        opacities = opacities.squeeze(-1);
-    }
+    const auto opacities = normalize_opacity_shape(_splat_data.get_opacity());
+    const auto quats = _splat_data.get_rotation();
+    const auto scales = _splat_data.get_scaling();
 
-    auto scales = _splat_data.get_scaling();
-    auto quats = _splat_data.get_rotation();
+    // Get covariance matrices
+    const auto [covars, _] = gsplat::quat_scale_to_covar_preci_fwd(
+        quats, scales, true, false, false);
 
-    // Use gsplat's quat_scale_to_covar_preci function
-    auto covar_result = gsplat::quat_scale_to_covar_preci_fwd(
-        quats,
-        scales,
-        true,  // compute_covar
-        false, // compute_preci
-        false  // triu
-    );
-    auto covars = std::get<0>(covar_result); // [N, 3, 3]
+    // Opacity-based sigmoid weighting
+    const auto op_sigmoid = 1.0f / (1.0f + torch::exp(-NOISE_K * ((1.0f - opacities) - NOISE_X0)));
 
-    // Opacity sigmoid function: 1 / (1 + exp(-k * (x - x0)))
-    const float k = 100.0f;
-    const float x0 = 0.995f;
-    auto op_sigmoid = 1.0f / (1.0f + torch::exp(-k * ((1.0f - opacities) - x0)));
+    // Get current learning rate
+    const float current_lr = static_cast<torch::optim::AdamOptions&>(
+                                 _optimizer->param_groups()[0].options())
+                                 .lr();
 
-    // Get current learning rate from optimizer (after scheduler has updated it)
-    float current_lr = static_cast<torch::optim::AdamOptions&>(
-                           _optimizer->param_groups()[0].options())
-                           .lr();
-
-    // Generate noise
-    auto noise = torch::randn_like(_splat_data.means()) * op_sigmoid.unsqueeze(-1) * current_lr * _noise_lr;
-
-    // Transform noise by covariance
+    // Generate and apply noise
+    auto noise = torch::randn_like(_splat_data.means()) * op_sigmoid.unsqueeze(-1) * current_lr * NOISE_LR;
     noise = torch::bmm(covars, noise.unsqueeze(-1)).squeeze(-1);
-
-    // Add noise to positions
     _splat_data.means().add_(noise);
 }
 
-void MCMC::post_backward(int iter, gs::RenderOutput& render_output) {
-    // Increment SH degree every 1000 iterations
+void MCMC::post_backward(const int iter, gs::RenderOutput& render_output) {
     torch::NoGradGuard no_grad;
+
+    // Increment SH degree periodically
     if (iter % 1000 == 0) {
         _splat_data.increment_sh_degree();
     }
 
     // Refine Gaussians
     if (is_refining(iter)) {
-        // Relocate dead Gaussians
         relocate_gs();
-
-        // Add new Gaussians
         add_new_gs();
-
         c10::cuda::CUDACachingAllocator::emptyCache();
     }
 
-    // Inject noise to positions
     inject_noise();
 }
 
-void MCMC::step(int iter) {
+void MCMC::step(const int iter) {
     if (iter < _params->iterations) {
         _optimizer->step();
         _optimizer->zero_grad(true);
@@ -400,6 +353,7 @@ void MCMC::step(int iter) {
 void MCMC::initialize(const gs::param::OptimizationParameters& optimParams) {
     _params = std::make_unique<const gs::param::OptimizationParameters>(optimParams);
 
+    // Move all parameters to GPU and enable gradients
     const auto dev = torch::kCUDA;
     _splat_data.means() = _splat_data.means().to(dev).set_requires_grad(true);
     _splat_data.scaling_raw() = _splat_data.scaling_raw().to(dev).set_requires_grad(true);
@@ -409,53 +363,32 @@ void MCMC::initialize(const gs::param::OptimizationParameters& optimParams) {
     _splat_data.shN() = _splat_data.shN().to(dev).set_requires_grad(true);
 
     // Initialize binomial coefficients
-    const int n_max = 51;
-    _binoms = torch::zeros({n_max, n_max}, torch::kFloat32);
-    auto binoms_accessor = _binoms.accessor<float, 2>();
-    for (int n = 0; n < n_max; ++n) {
-        for (int k = 0; k <= n; ++k) {
-            // Compute binomial coefficient C(n,k)
-            float binom = 1.0f;
-            for (int i = 0; i < k; ++i) {
-                binom *= static_cast<float>(n - i) / static_cast<float>(i + 1);
-            }
-            binoms_accessor[n][k] = binom;
-        }
-    }
-    _binoms = _binoms.to(dev);
+    _binoms = init_binomial_coefficients(BINOMIAL_MAX_N, dev);
 
-    // Initialize optimizer
+    // Initialize optimizer with parameter groups
     using torch::optim::AdamOptions;
-    std::vector<torch::optim::OptimizerParamGroup> groups;
+    std::vector<torch::optim::OptimizerParamGroup> groups = {
+        {{_splat_data.means()}, std::make_unique<AdamOptions>(_params->means_lr * _splat_data.get_scene_scale())},
+        {{_splat_data.sh0()}, std::make_unique<AdamOptions>(_params->shs_lr)},
+        {{_splat_data.shN()}, std::make_unique<AdamOptions>(_params->shs_lr / 20.f)},
+        {{_splat_data.scaling_raw()}, std::make_unique<AdamOptions>(_params->scaling_lr)},
+        {{_splat_data.rotation_raw()}, std::make_unique<AdamOptions>(_params->rotation_lr)},
+        {{_splat_data.opacity_raw()}, std::make_unique<AdamOptions>(_params->opacity_lr)}};
 
-    // Calculate initial learning rate for position
-    groups.emplace_back(torch::optim::OptimizerParamGroup({_splat_data.means()},
-                                                          std::make_unique<AdamOptions>(_params->means_lr * _splat_data.get_scene_scale())));
-    groups.emplace_back(torch::optim::OptimizerParamGroup({_splat_data.sh0()},
-                                                          std::make_unique<AdamOptions>(_params->shs_lr)));
-    groups.emplace_back(torch::optim::OptimizerParamGroup({_splat_data.shN()},
-                                                          std::make_unique<AdamOptions>(_params->shs_lr / 20.f)));
-    groups.emplace_back(torch::optim::OptimizerParamGroup({_splat_data.scaling_raw()},
-                                                          std::make_unique<AdamOptions>(_params->scaling_lr)));
-    groups.emplace_back(torch::optim::OptimizerParamGroup({_splat_data.rotation_raw()},
-                                                          std::make_unique<AdamOptions>(_params->rotation_lr)));
-    groups.emplace_back(torch::optim::OptimizerParamGroup({_splat_data.opacity_raw()},
-                                                          std::make_unique<AdamOptions>(_params->opacity_lr)));
-
-    for (auto& g : groups)
+    // Set epsilon for all groups
+    for (auto& g : groups) {
         static_cast<AdamOptions&>(g.options()).eps(1e-15);
+    }
 
     _optimizer = std::make_unique<torch::optim::Adam>(groups, AdamOptions(0.f).eps(1e-15));
 
-    // Initialize exponential scheduler
-    // Python: gamma = 0.01^(1/max_steps)
-    // This means after max_steps, lr will be 0.01 * initial_lr
+    // Initialize scheduler
     const double gamma = std::pow(0.01, 1.0 / _params->iterations);
     _scheduler = std::make_unique<ExponentialLR>(*_optimizer, gamma, 0);
 }
 
 bool MCMC::is_refining(int iter) const {
-    return (iter < _params->stop_refine &&
-            iter > _params->start_refine &&
-            iter % _params->refine_every == 0);
+    return iter < _params->stop_refine &&
+           iter > _params->start_refine &&
+           iter % _params->refine_every == 0;
 }
