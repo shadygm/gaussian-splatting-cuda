@@ -51,13 +51,13 @@ namespace gs {
         TORCH_CHECK(settings.is_cuda(), "settings must be on CUDA");
 
         // Extract settings - keep on same device as input
-        const auto width = settings[0].item<int>();
-        const auto height = settings[1].item<int>();
-        const auto eps2d = settings[2].item<float>();
-        const auto near_plane = settings[3].item<float>();
-        const auto far_plane = settings[4].item<float>();
-        const auto radius_clip = settings[5].item<float>();
-        const auto scaling_modifier = settings[6].item<float>();
+        const int width = settings[0].item<int>();
+        const int height = settings[1].item<int>();
+        const float eps2d = settings[2].item<float>();
+        const float near_plane = settings[3].item<float>();
+        const float far_plane = settings[4].item<float>();
+        const float radius_clip = settings[5].item<float>();
+        const float scaling_modifier = settings[6].item<float>();
 
         // Ensure all tensors are contiguous
         means3D = means3D.contiguous();
@@ -70,10 +70,10 @@ namespace gs {
         K = K.contiguous();
 
         // Apply scaling modifier
-        auto scaled_scales = scales * scaling_modifier;
+        const auto scaled_scales = scales * scaling_modifier;
 
         // Call projection - pass undefined tensor if opacities not provided
-        auto proj_results = gsplat::projection_ewa_3dgs_fused_fwd(
+        const auto proj_results = gsplat::projection_ewa_3dgs_fused_fwd(
             means3D,
             {}, // covars
             quats,
@@ -129,13 +129,13 @@ namespace gs {
         torch::autograd::AutogradContext* ctx,
         torch::autograd::tensor_list grad_outputs) {
 
-        auto v_radii = grad_outputs[0];
-        auto v_means2d = grad_outputs[1].to(torch::kCUDA).contiguous();
-        auto v_depths = grad_outputs[2].to(torch::kCUDA).contiguous();
-        auto v_conics = grad_outputs[3].to(torch::kCUDA).contiguous();
-        auto v_compensations = grad_outputs[4].to(torch::kCUDA).contiguous();
+        const auto v_radii = grad_outputs[0];
+        const auto v_means2d = grad_outputs[1].to(torch::kCUDA).contiguous();
+        const auto v_depths = grad_outputs[2].to(torch::kCUDA).contiguous();
+        const auto v_conics = grad_outputs[3].to(torch::kCUDA).contiguous();
+        const auto v_compensations = grad_outputs[4].to(torch::kCUDA).contiguous();
 
-        auto saved = ctx->get_saved_variables();
+        const auto saved = ctx->get_saved_variables();
         const auto& means3D = saved[0];
         const auto& quats = saved[1];
         const auto& scales = saved[2];
@@ -148,12 +148,12 @@ namespace gs {
         const auto& compensations = saved[9];
 
         // Extract settings
-        const auto width = settings[0].item<int>();
-        const auto height = settings[1].item<int>();
-        const auto eps2d = settings[2].item<float>();
+        const int width = settings[0].item<int>();
+        const int height = settings[1].item<int>();
+        const float eps2d = settings[2].item<float>();
 
         // Call backward
-        auto proj_grads = gsplat::projection_ewa_3dgs_fused_bwd(
+        const auto proj_grads = gsplat::projection_ewa_3dgs_fused_bwd(
             means3D, {}, quats, scales,
             viewmat, K,
             width, height, eps2d,
@@ -162,10 +162,10 @@ namespace gs {
             v_means2d, v_depths, v_conics, v_compensations,
             viewmat.requires_grad());
 
-        auto v_means3D = std::get<0>(proj_grads);
-        auto v_quats = std::get<2>(proj_grads);
-        auto v_scales = std::get<3>(proj_grads);
-        auto v_viewmat = std::get<4>(proj_grads);
+        const auto v_means3D = std::get<0>(proj_grads);
+        const auto v_quats = std::get<2>(proj_grads);
+        const auto v_scales = std::get<3>(proj_grads);
+        const auto v_viewmat = std::get<4>(proj_grads);
 
         // v_opacities is computed from v_compensations only if opacities was defined
         torch::Tensor v_opacities;
@@ -222,10 +222,10 @@ namespace gs {
         }
 
         // Use only the coefficients we need
-        auto coeffs_used = coeffs.index({torch::indexing::Slice(),
-                                         torch::indexing::Slice(torch::indexing::None, num_sh_coeffs),
-                                         torch::indexing::Slice()})
-                               .contiguous();
+        const auto coeffs_used = coeffs.index({torch::indexing::Slice(),
+                                               torch::indexing::Slice(torch::indexing::None, num_sh_coeffs),
+                                               torch::indexing::Slice()})
+                                     .contiguous();
 
         // Call spherical harmonics forward
         auto colors = gsplat::spherical_harmonics_fwd(
@@ -247,9 +247,9 @@ namespace gs {
         torch::autograd::AutogradContext* ctx,
         torch::autograd::tensor_list grad_outputs) {
 
-        auto v_colors = grad_outputs[0].to(torch::kCUDA).contiguous();
+        const auto v_colors = grad_outputs[0].to(torch::kCUDA).contiguous();
 
-        auto saved = ctx->get_saved_variables();
+        const auto saved = ctx->get_saved_variables();
         const auto& dirs = saved[0];
         const auto& coeffs = saved[1];
         const auto& coeffs_used = saved[2];
@@ -259,14 +259,14 @@ namespace gs {
         const int num_sh_coeffs = ctx->saved_data["num_sh_coeffs"].to<int>();
 
         // Compute v_dirs based on needs_input_grad[1] (dirs is second input)
-        bool compute_v_dirs = ctx->needs_input_grad(1);
+        const bool compute_v_dirs = ctx->needs_input_grad(1);
 
-        auto sh_grads = gsplat::spherical_harmonics_bwd(
+        const auto sh_grads = gsplat::spherical_harmonics_bwd(
             num_sh_coeffs, sh_degree,
             dirs, coeffs_used, masks,
             v_colors, compute_v_dirs);
 
-        auto v_coeffs_active = std::get<0>(sh_grads);
+        const auto v_coeffs_active = std::get<0>(sh_grads);
         auto v_dirs = std::get<1>(sh_grads);
 
         // Create full gradient tensor for coeffs
@@ -297,9 +297,9 @@ namespace gs {
         torch::Tensor settings) {    // [3] containing width, height, tile_size
 
         // Extract settings
-        const auto width = settings[0].item<int>();
-        const auto height = settings[1].item<int>();
-        const auto tile_size = settings[2].item<int>();
+        const int width = settings[0].item<int>();
+        const int height = settings[1].item<int>();
+        const int tile_size = settings[2].item<int>();
 
         const int C = static_cast<int>(means2d.size(0));
         const int N = static_cast<int>(means2d.size(1));
@@ -338,7 +338,7 @@ namespace gs {
         flatten_ids = flatten_ids.contiguous();
 
         // Call rasterization
-        auto raster_results = gsplat::rasterize_to_pixels_3dgs_fwd(
+        const auto raster_results = gsplat::rasterize_to_pixels_3dgs_fwd(
             means2d, conics, colors, opacities,
             bg_color, {}, // masks
             width, height, tile_size,
@@ -346,7 +346,7 @@ namespace gs {
 
         auto rendered_image = std::get<0>(raster_results).contiguous();
         auto rendered_alpha = std::get<1>(raster_results).to(torch::kFloat32).contiguous();
-        auto last_ids = std::get<2>(raster_results).contiguous();
+        const auto last_ids = std::get<2>(raster_results).contiguous();
 
         // Validate outputs - use actual channel count
         TORCH_CHECK(rendered_image.dim() == 4 && rendered_image.size(0) == C &&
@@ -369,14 +369,15 @@ namespace gs {
 
         return {rendered_image, rendered_alpha, last_ids};
     }
+
     torch::autograd::tensor_list RasterizationFunction::backward(
         torch::autograd::AutogradContext* ctx,
         torch::autograd::tensor_list grad_outputs) {
 
-        auto grad_image = grad_outputs[0].to(torch::kCUDA).contiguous();
-        auto grad_alpha = grad_outputs[1].to(torch::kCUDA).contiguous();
+        const auto grad_image = grad_outputs[0].to(torch::kCUDA).contiguous();
+        const auto grad_alpha = grad_outputs[1].to(torch::kCUDA).contiguous();
 
-        auto saved = ctx->get_saved_variables();
+        const auto saved = ctx->get_saved_variables();
         const auto& means2d = saved[0];
         const auto& conics = saved[1];
         const auto& colors = saved[2];
@@ -389,12 +390,12 @@ namespace gs {
         const auto& settings = saved[9];
 
         // Extract settings
-        const auto width = settings[0].item<int>();
-        const auto height = settings[1].item<int>();
-        const auto tile_size = settings[2].item<int>();
+        const int width = settings[0].item<int>();
+        const int height = settings[1].item<int>();
+        const int tile_size = settings[2].item<int>();
 
         // Call backward
-        auto raster_grads = gsplat::rasterize_to_pixels_3dgs_bwd(
+        const auto raster_grads = gsplat::rasterize_to_pixels_3dgs_bwd(
             means2d, conics, colors, opacities,
             bg_color, {}, // masks
             width, height, tile_size,
@@ -403,16 +404,16 @@ namespace gs {
             grad_image, grad_alpha,
             false); // absgrad
 
-        auto v_means2d_abs = std::get<0>(raster_grads);
-        auto v_means2d = std::get<1>(raster_grads).contiguous();
-        auto v_conics = std::get<2>(raster_grads).contiguous();
-        auto v_colors = std::get<3>(raster_grads).contiguous();
-        auto v_opacities = std::get<4>(raster_grads).contiguous();
+        const auto v_means2d_abs = std::get<0>(raster_grads);
+        const auto v_means2d = std::get<1>(raster_grads).contiguous();
+        const auto v_conics = std::get<2>(raster_grads).contiguous();
+        const auto v_colors = std::get<3>(raster_grads).contiguous();
+        const auto v_opacities = std::get<4>(raster_grads).contiguous();
 
         // Background gradient
         torch::Tensor v_bg_color;
         if (bg_color.requires_grad()) {
-            auto one_minus_alpha = 1.0f - rendered_alpha;
+            const auto one_minus_alpha = 1.0f - rendered_alpha;
             v_bg_color = (grad_image * one_minus_alpha).sum({1, 2});
         }
 
@@ -436,9 +437,9 @@ namespace gs {
         TORCH_CHECK(settings.is_cuda(), "settings must be on CUDA");
 
         // Extract settings
-        bool compute_covar = settings[0].item<bool>();
-        bool compute_preci = settings[1].item<bool>();
-        bool triu = settings[2].item<bool>();
+        const bool compute_covar = settings[0].item<bool>();
+        const bool compute_preci = settings[1].item<bool>();
+        const bool triu = settings[2].item<bool>();
 
         auto [covars, precis] = gsplat::quat_scale_to_covar_preci_fwd(
             quats, scales, compute_covar, compute_preci, triu);
@@ -469,12 +470,12 @@ namespace gs {
         torch::autograd::AutogradContext* ctx,
         torch::autograd::tensor_list grad_outputs) {
 
-        auto saved = ctx->get_saved_variables();
-        auto quats = saved[0];
-        auto scales = saved[1];
-        auto settings = saved[2];
+        const auto saved = ctx->get_saved_variables();
+        const auto quats = saved[0];
+        const auto scales = saved[1];
+        const auto settings = saved[2];
 
-        bool triu = settings[2].item<bool>();
+        const bool triu = settings[2].item<bool>();
 
         auto v_covars = grad_outputs[0];
         auto v_precis = grad_outputs[1];
@@ -491,7 +492,7 @@ namespace gs {
 
         if ((v_covars.defined() && v_covars.abs().sum().item<float>() > 0) ||
             (v_precis.defined() && v_precis.abs().sum().item<float>() > 0)) {
-            auto [grad_quats, grad_scales] = gsplat::quat_scale_to_covar_preci_bwd(
+            const auto [grad_quats, grad_scales] = gsplat::quat_scale_to_covar_preci_bwd(
                 quats, scales, triu, v_covars, v_precis);
             v_quats = grad_quats;
             v_scales = grad_scales;

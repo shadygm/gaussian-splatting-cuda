@@ -9,7 +9,7 @@ namespace gs {
     using torch::indexing::Slice;
 
     inline torch::Tensor spherical_harmonics(
-        int sh_degree,
+        const int sh_degree,
         const torch::Tensor& dirs,
         const torch::Tensor& coeffs,
         const torch::Tensor& masks = {}) {
@@ -29,8 +29,8 @@ namespace gs {
         }
 
         // Create sh_degree tensor
-        auto sh_degree_tensor = torch::tensor({sh_degree},
-                                              torch::TensorOptions().dtype(torch::kInt32).device(dirs.device()));
+        const auto sh_degree_tensor = torch::tensor({sh_degree},
+                                                    torch::TensorOptions().dtype(torch::kInt32).device(dirs.device()));
 
         // Call the autograd function
         return SphericalHarmonicsFunction::apply(
@@ -58,7 +58,7 @@ namespace gs {
         const int image_width = static_cast<int>(viewpoint_camera.image_width());
 
         // Prepare viewmat and K
-        auto viewmat = viewpoint_camera.world_view_transform().to(torch::kCUDA);
+        const auto viewmat = viewpoint_camera.world_view_transform().to(torch::kCUDA);
         TORCH_CHECK(viewmat.dim() == 3 && viewmat.size(0) == 1 && viewmat.size(1) == 4 && viewmat.size(2) == 4,
                     "viewmat must be [1, 4, 4] after transpose and unsqueeze, got ", viewmat.sizes());
         TORCH_CHECK(viewmat.is_cuda(), "viewmat must be on CUDA");
@@ -67,7 +67,7 @@ namespace gs {
         TORCH_CHECK(K.is_cuda(), "K must be on CUDA");
 
         // Get Gaussian parameters
-        auto means3D = gaussian_model.get_means();
+        const auto means3D = gaussian_model.get_means();
         auto opacities = gaussian_model.get_opacity();
         if (opacities.dim() == 2 && opacities.size(1) == 1) {
             opacities = opacities.squeeze(-1);
@@ -115,23 +115,23 @@ namespace gs {
         const bool calc_compensations = antialiased;
 
         // Step 1: Projection
-        auto proj_settings = torch::tensor({(float)image_width,
-                                            (float)image_height,
-                                            eps2d,
-                                            near_plane,
-                                            far_plane,
-                                            radius_clip,
-                                            scaling_modifier},
-                                           torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
+        const auto proj_settings = torch::tensor({static_cast<float>(image_width),
+                                                  static_cast<float>(image_height),
+                                                  eps2d,
+                                                  near_plane,
+                                                  far_plane,
+                                                  radius_clip,
+                                                  scaling_modifier},
+                                                 torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
 
-        auto proj_outputs = ProjectionFunction::apply(
+        const auto proj_outputs = ProjectionFunction::apply(
             means3D, rotations, scales, opacities, viewmat, K, proj_settings);
 
-        auto radii = proj_outputs[0];
-        auto means2d = proj_outputs[1];
-        auto depths = proj_outputs[2];
-        auto conics = proj_outputs[3];
-        auto compensations = proj_outputs[4];
+        const auto radii = proj_outputs[0];
+        const auto means2d = proj_outputs[1];
+        const auto depths = proj_outputs[2];
+        const auto conics = proj_outputs[3];
+        const auto compensations = proj_outputs[4];
 
         // Create means2d with gradient tracking for backward compatibility
         auto means2d_with_grad = means2d.squeeze(0).contiguous();
@@ -140,8 +140,8 @@ namespace gs {
 
         // Step 2: Compute colors from SH
         // First, compute camera position from inverse viewmat
-        auto viewmat_inv = torch::inverse(viewmat);
-        auto campos = viewmat_inv.index({Slice(), Slice(None, 3), 3}); // [C, 3]
+        const auto viewmat_inv = torch::inverse(viewmat);
+        const auto campos = viewmat_inv.index({Slice(), Slice(None, 3), 3}); // [C, 3]
 
         // Compute directions from camera to each Gaussian
         // Since C = 1 in our case, we can simplify
@@ -149,7 +149,7 @@ namespace gs {
         dirs = dirs.squeeze(0);                                 // [N, 3]
 
         // Create masks based on radii
-        auto masks = (radii > 0).all(-1).squeeze(0); // [N]
+        const auto masks = (radii > 0).all(-1).squeeze(0); // [N]
 
         // Now call spherical harmonics with proper directions
         auto colors = spherical_harmonics(sh_degree, dirs, sh_coeffs, masks);
@@ -216,17 +216,17 @@ namespace gs {
         TORCH_CHECK(isect_offsets.is_cuda(), "isect_offsets must be on CUDA");
 
         // Step 6: Rasterization
-        auto raster_settings = torch::tensor({(float)image_width,
-                                              (float)image_height,
-                                              (float)tile_size},
-                                             torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
+        const auto raster_settings = torch::tensor({static_cast<float>(image_width),
+                                                    static_cast<float>(image_height),
+                                                    static_cast<float>(tile_size)},
+                                                   torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
 
-        auto raster_outputs = RasterizationFunction::apply(
+        const auto raster_outputs = RasterizationFunction::apply(
             means2d, conics, render_colors, final_opacities, final_bg,
             isect_offsets, flatten_ids, raster_settings);
 
-        auto rendered_image = raster_outputs[0];
-        auto rendered_alpha = raster_outputs[1];
+        const auto rendered_image = raster_outputs[0];
+        const auto rendered_alpha = raster_outputs[1];
 
         // Step 7: Post-process based on render mode
         torch::Tensor final_image, final_depth;
@@ -255,7 +255,7 @@ namespace gs {
 
         case RenderMode::RGB_ED:
             final_image = rendered_image.index({Slice(), Slice(), Slice(), Slice(None, -1)});
-            auto accum_depth = rendered_image.index({Slice(), Slice(), Slice(), Slice(-1, None)});
+            const auto accum_depth = rendered_image.index({Slice(), Slice(), Slice(), Slice(-1, None)});
             final_depth = accum_depth / rendered_alpha.clamp_min(1e-10);
             break;
         }
