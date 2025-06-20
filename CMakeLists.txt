@@ -196,33 +196,34 @@ target_compile_options(gaussian_kernels PRIVATE
 # VISUALIZER LIBRARY (separate for OpenGL/CUDA interop code)
 # =============================================================================
 
+set(VISUALIZER_SOURCES
+        src/visualizer/infinite_grid_renderer.cpp
+)
+
+# Add CUDA interop source only if available
 if(CUDA_GL_INTEROP_FOUND)
-    set(VISUALIZER_SOURCES
-            src/visualizer/cuda_gl_interop.cpp
-    )
-
-    add_library(gaussian_visualizer STATIC ${VISUALIZER_SOURCES})
-
-    target_include_directories(gaussian_visualizer
-            PUBLIC
-            ${CMAKE_CURRENT_SOURCE_DIR}/include
-            ${CMAKE_CURRENT_BINARY_DIR}/include  # For generated config.h
-            ${CUDAToolkit_INCLUDE_DIRS}
-            ${OPENGL_INCLUDE_DIRS}
-    )
-
-    target_link_libraries(gaussian_visualizer
-            PUBLIC
-            ${TORCH_LIBRARIES}
-            ${OPENGL_LIBRARIES}
-            CUDA::cudart
-            glad
-            glfw
-    )
-
-    # Don't define here - it's already in config.h
-    # target_compile_definitions(gaussian_visualizer PUBLIC CUDA_GL_INTEROP_ENABLED)
+    list(APPEND VISUALIZER_SOURCES src/visualizer/cuda_gl_interop.cpp)
 endif()
+
+add_library(gaussian_visualizer STATIC ${VISUALIZER_SOURCES})
+
+target_include_directories(gaussian_visualizer
+        PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_BINARY_DIR}/include  # For generated config.h
+        ${CUDAToolkit_INCLUDE_DIRS}
+        ${OPENGL_INCLUDE_DIRS}
+)
+
+target_link_libraries(gaussian_visualizer
+        PUBLIC
+        ${TORCH_LIBRARIES}
+        ${OPENGL_LIBRARIES}
+        CUDA::cudart
+        glad
+        glfw
+        glm
+)
 
 # =============================================================================
 # MAIN EXECUTABLE - WITH CUDA DEVICE LINKING
@@ -251,15 +252,12 @@ target_include_directories(${PROJECT_NAME}
 set(MAIN_LINK_LIBRARIES
         gaussian_host
         gaussian_kernels
+        gaussian_visualizer
         gsplat_backend
         Python3::Python
         ${OPENGL_LIBRARIES}
         CUDA::cudart
 )
-
-if(CUDA_GL_INTEROP_FOUND AND TARGET gaussian_visualizer)
-    list(APPEND MAIN_LINK_LIBRARIES gaussian_visualizer)
-endif()
 
 target_link_libraries(${PROJECT_NAME} PRIVATE ${MAIN_LINK_LIBRARIES})
 
@@ -333,10 +331,8 @@ endfunction()
 
 configure_build_type(gaussian_host)
 configure_build_type(gaussian_kernels)
+configure_build_type(gaussian_visualizer)
 configure_build_type(gsplat_backend)
-if(CUDA_GL_INTEROP_FOUND AND TARGET gaussian_visualizer)
-    configure_build_type(gaussian_visualizer)
-endif()
 configure_build_type(${PROJECT_NAME})
 
 # =============================================================================
@@ -395,6 +391,7 @@ if(BUILD_TESTS)
     set(TEST_LINK_LIBRARIES
             gaussian_host
             gaussian_kernels
+            gaussian_visualizer
             gsplat_backend
             GTest::gtest
             GTest::gtest_main
@@ -402,10 +399,6 @@ if(BUILD_TESTS)
             ${OPENGL_LIBRARIES}
             CUDA::cudart
     )
-
-    if(CUDA_GL_INTEROP_FOUND AND TARGET gaussian_visualizer)
-        list(APPEND TEST_LINK_LIBRARIES gaussian_visualizer)
-    endif()
 
     target_link_libraries(gaussian_tests PRIVATE ${TEST_LINK_LIBRARIES})
 

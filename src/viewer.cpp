@@ -189,16 +189,19 @@ namespace gs {
         std::cout << "Using CPU copy for rendering (interop not available)" << std::endl;
 #endif
 
-        while (!glfwWindowShouldClose(window_)) {
+        // Initialize grid renderer
+        grid_renderer_ = std::make_unique<InfiniteGridRenderer>();
+        if (!grid_renderer_->init(shader_path)) {
+            std::cerr << "Failed to initialize infinite grid renderer" << std::endl;
+            grid_renderer_.reset();
+        }
 
-            // Clear with a dark background
-            glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
-            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        while (!glfwWindowShouldClose(window_)) {
+            // Don't clear here - let draw() handle clearing
+            // This ensures proper ordering of grid and splat rendering
 
             controlFrameRate();
-
             updateWindowSize();
-
             draw();
 
             glfwSwapBuffers(window_);
@@ -296,6 +299,12 @@ namespace gs {
                 RenderMode::RGB);
         }
 
+        // Clear depth buffer before rendering splats to ensure proper layering
+        glClear(GL_DEPTH_BUFFER_BIT);
+
+        // Disable depth test for splat rendering (they handle their own depth)
+        glDisable(GL_DEPTH_TEST);
+
 #ifdef CUDA_GL_INTEROP_ENABLED
         // Use interop for direct GPU transfer
         auto interop_renderer = std::dynamic_pointer_cast<ScreenQuadRendererInterop>(screen_renderer_);
@@ -318,6 +327,16 @@ namespace gs {
 #endif
 
         screen_renderer_->render(quadShader_, viewport_);
+
+        // Re-enable depth test after splat rendering
+        glEnable(GL_DEPTH_TEST);
+    }
+
+    void GSViewer::drawGrid() {
+        if (grid_renderer_ && show_grid_) {
+            // Render grid before the splats so it appears behind
+            grid_renderer_->render(viewport_, grid_plane_);
+        }
     }
 
     void GSViewer::configuration() {
@@ -454,6 +473,29 @@ namespace gs {
             config_->fov = 75.0f;
         }
 
+        // Grid Settings Section
+        ImGui::Separator();
+        ImGui::Text("Grid Settings");
+        ImGui::Separator();
+
+        ImGui::Checkbox("Show Grid", &show_grid_);
+
+        if (show_grid_) {
+            const char* plane_names[] = { "YZ (X)", "XZ (Y)", "XY (Z)" };
+            int current_plane = static_cast<int>(grid_plane_);
+            if (ImGui::Combo("Grid Plane", &current_plane, plane_names, 3)) {
+                grid_plane_ = static_cast<InfiniteGridRenderer::GridPlane>(current_plane);
+            }
+
+            // Optional: Add opacity control
+            if (grid_renderer_) {
+                static float grid_opacity = 1.0f;
+                if (ImGui::SliderFloat("Grid Opacity", &grid_opacity, 0.0f, 1.0f)) {
+                    grid_renderer_->setOpacity(grid_opacity);
+                }
+            }
+        }
+
         int current_iter2;
         int total_iter;
         int num_splats;
@@ -510,10 +552,16 @@ namespace gs {
     }
 
     void GSViewer::draw() {
-        // Render 3D scene if available
+        // Clear color and depth buffers first
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        // Draw grid first with depth testing enabled
+        drawGrid();
+
+        // Then render the splats (which will clear depth buffer again for proper compositing)
         drawFrame();
 
-        // ImGui UI
+        // ImGui UI (renders on top of everything)
         configuration();
 
         // Render all ImGui elements

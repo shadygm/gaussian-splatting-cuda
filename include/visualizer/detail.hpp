@@ -5,6 +5,7 @@
 #include "core/rasterizer.hpp"
 #include "core/trainer.hpp"
 #include "visualizer/renderer.hpp"
+#include "visualizer/infinite_grid_renderer.hpp"
 // clang-format off
 // CRITICAL: GLAD must be included before GLFW to avoid OpenGL header conflicts
 #include <glad/glad.h>
@@ -65,6 +66,9 @@ namespace gs {
         std::shared_ptr<ScreenQuadRenderer> screen_renderer_;
 
         std::shared_ptr<Shader> quadShader_;
+        std::unique_ptr<InfiniteGridRenderer> grid_renderer_;
+        bool show_grid_ = true;
+        InfiniteGridRenderer::GridPlane grid_plane_ = InfiniteGridRenderer::GridPlane::XZ;
 
     private:
         std::string title_;
@@ -152,6 +156,8 @@ namespace gs {
         std::mutex splat_mtx_;
 
     private:
+        void drawGrid();
+
         std::shared_ptr<RenderingConfig> config_;
 
         Trainer* trainer_;
