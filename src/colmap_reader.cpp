@@ -322,6 +322,7 @@ read_colmap_cameras(const std::filesystem::path base_path,
     }
 
     std::cout << "Training with " << out.size() << " images \n";
+    std::cout << "Camera locations mean: " << camera_locations.mean(0) << "\n";
     return {std::move(out), camera_locations.mean(0)};
 }
 

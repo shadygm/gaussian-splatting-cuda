@@ -4,8 +4,9 @@
 #include "core/image_io.hpp"
 #include "core/rasterizer.hpp"
 #include "core/trainer.hpp"
-#include "visualizer/renderer.hpp"
 #include "visualizer/infinite_grid_renderer.hpp"
+#include "visualizer/renderer.hpp"
+#include "visualizer/view_cube_renderer.hpp"
 // clang-format off
 // CRITICAL: GLAD must be included before GLFW to avoid OpenGL header conflicts
 #include <glad/glad.h>
@@ -52,6 +53,8 @@ namespace gs {
 
         static void scrollCallback(GLFWwindow* window, double xoffset, double yoffset);
 
+        static void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
+
         void run();
 
         virtual void draw() = 0;
@@ -66,14 +69,20 @@ namespace gs {
         std::shared_ptr<ScreenQuadRenderer> screen_renderer_;
 
         std::shared_ptr<Shader> quadShader_;
+
+        // Grid renderer
         std::unique_ptr<InfiniteGridRenderer> grid_renderer_;
         bool show_grid_ = true;
         InfiniteGridRenderer::GridPlane grid_plane_ = InfiniteGridRenderer::GridPlane::XZ;
 
-    private:
-        std::string title_;
+        // View cube renderer
+        std::unique_ptr<ViewCubeRenderer> view_cube_renderer_;
+        bool show_view_cube_ = true;
 
         GLFWwindow* window_;
+
+    private:
+        std::string title_;
 
         static ViewerDetail* detail_;
 
@@ -157,6 +166,7 @@ namespace gs {
 
     private:
         void drawGrid();
+        void drawViewCube();
 
         std::shared_ptr<RenderingConfig> config_;
 
@@ -168,6 +178,11 @@ namespace gs {
         std::chrono::steady_clock::time_point save_start_time_;
         bool manual_start_triggered_ = false;
         bool training_started_ = false;
+
+        // Store scene bounds for reference (but don't auto-focus on them)
+        glm::vec3 scene_center_{0.0f, 0.0f, 0.0f};
+        float scene_radius_ = 1.0f;
+        bool scene_bounds_valid_ = false;
     };
 
 } // namespace gs

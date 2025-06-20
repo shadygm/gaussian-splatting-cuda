@@ -36,9 +36,9 @@ namespace gs {
         glfwWindowHint(GLFW_DEPTH_BITS, 24);
 
         window_ = glfwCreateWindow(
-            detail_->viewport_.windowSize.x,
-            detail_->viewport_.windowSize.y,
-            detail_->title_.c_str(), NULL, NULL);
+            viewport_.windowSize.x,
+            viewport_.windowSize.y,
+            title_.c_str(), NULL, NULL);
 
         if (window_ == NULL) {
             std::cerr << "Failed to create GLFW window!" << std::endl;
@@ -59,6 +59,7 @@ namespace gs {
         glfwSetMouseButtonCallback(window_, mouseButtonCallback);
         glfwSetCursorPosCallback(window_, cursorPosCallback);
         glfwSetScrollCallback(window_, scrollCallback);
+        glfwSetKeyCallback(window_, keyCallback);
 
         glEnable(GL_LINE_SMOOTH);
         glDepthFunc(GL_LEQUAL);
@@ -135,28 +136,83 @@ namespace gs {
     }
 
     void ViewerDetail::mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
+        // First check ImGui
+        ImGuiIO& io = ImGui::GetIO();
+        if (io.WantCaptureMouse) {
+            return;
+        }
+
         if (detail_->any_window_active)
             return;
 
-        if ((button == GLFW_MOUSE_BUTTON_LEFT || button == GLFW_MOUSE_BUTTON_RIGHT) && action == GLFW_PRESS) {
+        if (action == GLFW_PRESS) {
             double xpos, ypos;
             glfwGetCursorPos(window, &xpos, &ypos);
-            detail_->viewport_.camera.initScreenPos(glm::vec2(xpos, ypos));
+
+            // Check if click is on view cube for left button
+            if (button == GLFW_MOUSE_BUTTON_LEFT && detail_->view_cube_renderer_ && detail_->show_view_cube_) {
+                float margin = 20.0f;
+                float size = 120.0f;
+                float cube_x = detail_->viewport_.windowSize.x - margin - size / 2;
+                float cube_y = detail_->viewport_.windowSize.y - margin - size / 2;
+
+                // Convert to OpenGL coordinates (flip Y)
+                float gl_y = detail_->viewport_.windowSize.y - ypos;
+
+                int hit = detail_->view_cube_renderer_->hitTest(
+                    detail_->viewport_, xpos, gl_y, cube_x, cube_y, size);
+
+                if (hit >= 0) {
+                    // Align camera to face the clicked element
+                    switch (hit) {
+                    case 0: detail_->viewport_.alignToAxis('x', true); break;  // +X
+                    case 1: detail_->viewport_.alignToAxis('x', false); break; // -X
+                    case 2: detail_->viewport_.alignToAxis('y', true); break;  // +Y
+                    case 3: detail_->viewport_.alignToAxis('y', false); break; // -Y
+                    case 4: detail_->viewport_.alignToAxis('z', true); break;  // +Z
+                    case 5: detail_->viewport_.alignToAxis('z', false); break; // -Z
+                    }
+
+                    return; // Don't process normal camera controls
+                }
+            }
+
+            // Initialize mouse position for camera controls
+            detail_->viewport_.initScreenPos(glm::vec2(xpos, ypos));
+        } else if (action == GLFW_RELEASE) {
+            // Reset mouse initialization state when button is released
+            detail_->viewport_.mouseInitialized = false;
         }
     }
 
     void ViewerDetail::cursorPosCallback(GLFWwindow* window, double x, double y) {
+        // Check ImGui
+        ImGuiIO& io = ImGui::GetIO();
+        if (io.WantCaptureMouse) {
+            return;
+        }
+
         if (detail_->any_window_active)
             return;
 
+        // Update current mouse position
+        glm::vec2 currentPos(x, y);
+
+        // Orbit controls: Left mouse = rotate, Right mouse = pan
         if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
-            detail_->viewport_.camera.translate(glm::vec2(x, y));
+            detail_->viewport_.rotate(currentPos);
         } else if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
-            detail_->viewport_.camera.rotate(glm::vec2(x, y));
+            detail_->viewport_.translate(currentPos);
         }
     }
 
     void ViewerDetail::scrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
+        // Check ImGui
+        ImGuiIO& io = ImGui::GetIO();
+        if (io.WantCaptureMouse) {
+            return;
+        }
+
         if (detail_->any_window_active)
             return;
 
@@ -164,7 +220,38 @@ namespace gs {
         if (std::abs(delta) < 1.0e-2f)
             return;
 
-        detail_->viewport_.camera.zoom(delta);
+        detail_->viewport_.zoom(delta);
+    }
+
+    void ViewerDetail::keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
+        // Check ImGui
+        ImGuiIO& io = ImGui::GetIO();
+        if (io.WantCaptureKeyboard) {
+            return;
+        }
+
+        if (action == GLFW_PRESS || action == GLFW_REPEAT) {
+            switch (key) {
+            case GLFW_KEY_G:
+                if (detail_->show_grid_) {
+                    detail_->show_grid_ = false;
+                } else {
+                    detail_->show_grid_ = true;
+                }
+                break;
+            case GLFW_KEY_F:
+                // Focus on world origin
+                detail_->viewport_.reset();
+                break;
+            case GLFW_KEY_H: // H for "home" view - look down at world origin
+                detail_->viewport_.target = glm::vec3(0.0f, 0.0f, 0.0f);
+                detail_->viewport_.azimuth = -135.0f;
+                detail_->viewport_.elevation = -60.0f;
+                detail_->viewport_.distance = 10.0f;
+                std::cout << "Camera set to home view at world origin" << std::endl;
+                break;
+            }
+        }
     }
 
     void ViewerDetail::run() {
@@ -175,6 +262,20 @@ namespace gs {
         }
 
         std::string shader_path = std::string(PROJECT_ROOT_PATH) + "/include/visualizer/shaders/";
+
+        // Initialize grid renderer FIRST
+        grid_renderer_ = std::make_unique<InfiniteGridRenderer>();
+        if (!grid_renderer_->init(shader_path)) {
+            std::cerr << "Failed to initialize infinite grid renderer" << std::endl;
+            grid_renderer_.reset();
+        } else {
+            std::cout << "Grid renderer initialized successfully" << std::endl;
+            // Set initial grid visibility to true
+            show_grid_ = true;
+            grid_plane_ = InfiniteGridRenderer::GridPlane::XZ; // Ensure XZ plane
+        }
+
+        // Then initialize other renderers...
         quadShader_ = std::make_shared<Shader>(
             (shader_path + "/screen_quad.vert").c_str(),
             (shader_path + "/screen_quad.frag").c_str(),
@@ -189,19 +290,20 @@ namespace gs {
         std::cout << "Using CPU copy for rendering (interop not available)" << std::endl;
 #endif
 
-        // Initialize grid renderer
-        grid_renderer_ = std::make_unique<InfiniteGridRenderer>();
-        if (!grid_renderer_->init(shader_path)) {
-            std::cerr << "Failed to initialize infinite grid renderer" << std::endl;
-            grid_renderer_.reset();
+        // Initialize view cube renderer
+        view_cube_renderer_ = std::make_unique<ViewCubeRenderer>();
+        if (!view_cube_renderer_->init(shader_path)) {
+            std::cerr << "Failed to initialize view cube renderer" << std::endl;
+            view_cube_renderer_.reset();
         }
 
         while (!glfwWindowShouldClose(window_)) {
-            // Don't clear here - let draw() handle clearing
-            // This ensures proper ordering of grid and splat rendering
-
             controlFrameRate();
             updateWindowSize();
+
+            // Update viewport for smooth camera transitions
+            viewport_.update();
+
             draw();
 
             glfwSwapBuffers(window_);
@@ -226,6 +328,12 @@ namespace gs {
         notifier_ = std::make_shared<Notifier>();
 
         setFrameRate(30);
+
+        // Ensure grid is visible by default
+        show_grid_ = true;
+        grid_plane_ = InfiniteGridRenderer::GridPlane::XZ;
+
+        std::cout << "GSViewer constructed with grid enabled" << std::endl;
     }
 
     GSViewer::~GSViewer() {
@@ -251,38 +359,140 @@ namespace gs {
             return;
         }
 
-        glm::mat3 R = viewport_.getRotationMatrix();
-        glm::vec3 t = viewport_.getTranslation();
+        // Update scene bounds if needed (but don't auto-focus on them)
+        static bool bounds_initialized = false;
+        if (!bounds_initialized && trainer_->get_strategy().get_model().size() > 0) {
+            // Get approximate scene bounds from splat data
+            auto& model = trainer_->get_strategy().get_model();
+            auto means = model.get_means();
 
-        torch::Tensor R_tensor = torch::tensor({R[0][0], R[1][0], R[2][0],
-                                                R[0][1], R[1][1], R[2][1],
-                                                R[0][2], R[1][2], R[2][2]},
+            if (means.size(0) > 0) {
+                auto min_vals = std::get<0>(means.min(0));
+                auto max_vals = std::get<0>(means.max(0));
+
+                glm::vec3 min_point(
+                    min_vals[0].item<float>(),
+                    min_vals[1].item<float>(),
+                    min_vals[2].item<float>());
+
+                glm::vec3 max_point(
+                    max_vals[0].item<float>(),
+                    max_vals[1].item<float>(),
+                    max_vals[2].item<float>());
+
+                scene_center_ = (min_point + max_point) * 0.5f;
+                scene_radius_ = glm::length(max_point - min_point) * 0.5f;
+
+                // Make sure radius is reasonable
+                if (scene_radius_ < 0.1f)
+                    scene_radius_ = 1.0f;
+                if (scene_radius_ > 100.0f)
+                    scene_radius_ = 100.0f;
+
+                scene_bounds_valid_ = true;
+
+                std::cout << "Scene bounds - Center: (" << scene_center_.x << ", " << scene_center_.y << ", " << scene_center_.z
+                          << "), Radius: " << scene_radius_ << std::endl;
+
+                // Update camera's scene radius for proper speed scaling
+                viewport_.camera.sceneRadius = scene_radius_;
+
+                // Update zoom limits based on scene size
+                viewport_.camera.minZoom = scene_radius_ * 0.01f;
+                viewport_.camera.maxZoom = scene_radius_ * 100.0f;
+
+                bounds_initialized = true;
+
+                // Don't auto-focus! Let user control camera
+                std::cout << "Camera remains at world origin. Use mouse to navigate." << std::endl;
+            }
+        }
+
+        // Get the OpenGL view matrix
+        glm::mat4 view_opengl = viewport_.getViewMatrix();
+
+        // The OpenGL view matrix transforms from world to camera space
+        // Extract camera position in world space
+        glm::mat4 view_inv = glm::inverse(view_opengl);
+        glm::vec3 cam_pos_world = glm::vec3(view_inv[3]);
+
+        // Now we need to build the viewmat in the format expected by the CUDA kernel
+        // The kernel expects a row-major 4x4 matrix where:
+        // - The upper-left 3x3 is the rotation matrix R (world-to-camera)
+        // - The first 3 elements of the last column are the translation t
+        // - The transformation is: p_camera = R * p_world + t
+
+        // Since COLMAP uses a different coordinate system than OpenGL:
+        // OpenGL: Y-up, camera looks down -Z
+        // COLMAP: Y-down, camera looks down +Z
+
+        // We need to apply a 180-degree rotation around X to convert from OpenGL to COLMAP
+        glm::mat4 opengl_to_colmap = glm::mat4(1.0f);
+        opengl_to_colmap[1][1] = -1.0f; // Flip Y
+        opengl_to_colmap[2][2] = -1.0f; // Flip Z
+
+        // Apply the coordinate system transformation
+        glm::mat4 view_colmap = opengl_to_colmap * view_opengl;
+
+        // Extract the rotation and translation parts
+        glm::mat3 R_w2c = glm::mat3(view_colmap);
+        glm::vec3 t_w2c = glm::vec3(view_colmap[3]);
+
+        // Now create the viewmat in row-major format as expected by the kernel
+        torch::Tensor viewmat_tensor = torch::zeros({4, 4}, torch::kFloat32);
+
+        // Fill in the rotation part (remember, we're storing in row-major)
+        viewmat_tensor[0][0] = R_w2c[0][0];
+        viewmat_tensor[0][1] = R_w2c[0][1];
+        viewmat_tensor[0][2] = R_w2c[0][2];
+        viewmat_tensor[1][0] = R_w2c[1][0];
+        viewmat_tensor[1][1] = R_w2c[1][1];
+        viewmat_tensor[1][2] = R_w2c[1][2];
+        viewmat_tensor[2][0] = R_w2c[2][0];
+        viewmat_tensor[2][1] = R_w2c[2][1];
+        viewmat_tensor[2][2] = R_w2c[2][2];
+
+        // Fill in the translation part
+        viewmat_tensor[0][3] = t_w2c[0];
+        viewmat_tensor[1][3] = t_w2c[1];
+        viewmat_tensor[2][3] = t_w2c[2];
+
+        // Bottom row
+        viewmat_tensor[3][0] = 0.0f;
+        viewmat_tensor[3][1] = 0.0f;
+        viewmat_tensor[3][2] = 0.0f;
+        viewmat_tensor[3][3] = 1.0f;
+
+        // Extract R and t for the Camera constructor (which uses a different format)
+        // The Camera constructor expects R and T such that world_to_view constructs the proper matrix
+        // Looking at world_to_view in camera.cpp, it transposes R and creates a specific format
+
+        // For now, let's just extract what we need
+        torch::Tensor R_tensor = torch::tensor({R_w2c[0][0], R_w2c[1][0], R_w2c[2][0], // Note: transposed for row-major
+                                                R_w2c[0][1], R_w2c[1][1], R_w2c[2][1],
+                                                R_w2c[0][2], R_w2c[1][2], R_w2c[2][2]},
                                                torch::TensorOptions().dtype(torch::kFloat32))
                                      .reshape({3, 3});
 
-        torch::Tensor t_tensor = torch::tensor({t[0],
-                                                t[1],
-                                                t[2]},
-                                               torch::TensorOptions().dtype(torch::kFloat32))
-                                     .reshape({3, 1});
-
-        R_tensor = R_tensor.transpose(0, 1);
-        t_tensor = -R_tensor.mm(t_tensor).squeeze();
+        torch::Tensor t_tensor = torch::tensor({t_w2c[0], t_w2c[1], t_w2c[2]},
+                                               torch::TensorOptions().dtype(torch::kFloat32));
 
         glm::ivec2& reso = viewport_.windowSize;
         glm::vec2 fov = config_->getFov(reso.x, reso.y);
 
+        // Create camera with world-to-camera transformation
         Camera cam = Camera(
             R_tensor,
             t_tensor,
             fov.x,
             fov.y,
-            "online",
-            "none image",
+            "viewer",
+            "none",
             reso.x,
             reso.y,
             -1);
 
+        // Use a transparent background so the grid shows through
         torch::Tensor background = torch::zeros({3});
 
         RenderOutput output;
@@ -302,7 +512,11 @@ namespace gs {
         // Clear depth buffer before rendering splats to ensure proper layering
         glClear(GL_DEPTH_BUFFER_BIT);
 
-        // Disable depth test for splat rendering (they handle their own depth)
+        // Enable blending to composite splats over the grid
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+        // Disable depth testing for the screen quad
         glDisable(GL_DEPTH_TEST);
 
 #ifdef CUDA_GL_INTEROP_ENABLED
@@ -313,8 +527,21 @@ namespace gs {
             // Keep data on GPU - convert [C, H, W] to [H, W, C] format
             auto image_hwc = output.image.permute({1, 2, 0}).contiguous();
 
-            // Direct CUDA->OpenGL update (no CPU copy!)
-            interop_renderer->uploadFromCUDA(image_hwc, reso.x, reso.y);
+            // We need to add alpha channel for proper blending
+            torch::Tensor alpha = output.alpha;
+            if (alpha.defined() && alpha.numel() > 0) {
+                // Use the alpha from rasterization
+                alpha = alpha.squeeze(0);
+                if (alpha.dim() == 3 && alpha.size(0) == 1) {
+                    alpha = alpha.squeeze(0);
+                }
+                // Combine RGB with alpha
+                torch::Tensor rgba = torch::cat({image_hwc, alpha.unsqueeze(-1)}, -1);
+                interop_renderer->uploadFromCUDA(rgba, reso.x, reso.y);
+            } else {
+                // If no alpha, just use RGB
+                interop_renderer->uploadFromCUDA(image_hwc, reso.x, reso.y);
+            }
         } else {
             // Fallback to CPU copy
             auto image = (output.image * 255).to(torch::kCPU).to(torch::kU8).permute({1, 2, 0}).contiguous();
@@ -328,14 +555,49 @@ namespace gs {
 
         screen_renderer_->render(quadShader_, viewport_);
 
-        // Re-enable depth test after splat rendering
+        // Re-enable depth test for next frame
         glEnable(GL_DEPTH_TEST);
     }
 
     void GSViewer::drawGrid() {
+        static bool first_call = true;
+        if (first_call) {
+            std::cout << "First drawGrid call - grid_renderer_: " << (grid_renderer_ ? "valid" : "null")
+                      << ", show_grid_: " << show_grid_ << std::endl;
+            first_call = false;
+        }
+
         if (grid_renderer_ && show_grid_) {
-            // Render grid before the splats so it appears behind
+            // Dynamically adjust fade distance based on scene size
+            if (scene_bounds_valid_) {
+                // Make grid visible up to 10x the scene radius
+                float fade_start = scene_radius_ * 5.0f;
+                float fade_end = scene_radius_ * 20.0f;
+
+                // But ensure minimum visibility
+                fade_start = std::max(fade_start, 1000.0f);
+                fade_end = std::max(fade_end, 5000.0f);
+
+                grid_renderer_->setFadeDistance(fade_start, fade_end);
+            } else {
+                // Default for when scene bounds aren't known yet
+                grid_renderer_->setFadeDistance(1000.0f, 5000.0f);
+            }
+
             grid_renderer_->render(viewport_, grid_plane_);
+        }
+    }
+
+    void GSViewer::drawViewCube() {
+        if (view_cube_renderer_ && show_view_cube_) {
+            // Position in top-right corner
+            float margin = 20.0f;
+            float size = 120.0f;
+            float x = viewport_.windowSize.x - margin - size / 2;
+            float y = viewport_.windowSize.y - margin - size / 2;
+
+            // View cube also uses the same viewport camera state
+            view_cube_renderer_->render(viewport_, x, y, size);
         }
     }
 
@@ -344,7 +606,10 @@ namespace gs {
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
-        any_window_active = ImGui::IsAnyItemActive();
+        // Update the any_window_active flag based on ImGui state
+        any_window_active = ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow) ||
+                            ImGui::IsAnyItemActive() ||
+                            ImGui::IsAnyItemHovered();
 
         ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.5f, 0.5f, 0.5f, 0.8f));
         ImGui::Begin("Rendering Setting", nullptr, window_flags);
@@ -473,6 +738,59 @@ namespace gs {
             config_->fov = 75.0f;
         }
 
+        // Camera Info and Controls
+        ImGui::Separator();
+        ImGui::Text("Camera Controls");
+        ImGui::Separator();
+
+        ImGui::Text("Left Mouse: Orbit");
+        ImGui::Text("Right Mouse: Pan");
+        ImGui::Text("Scroll: Zoom");
+        ImGui::Text("G: Toggle Grid");
+        ImGui::Text("F: Focus World Origin");
+        ImGui::Text("H: Home View (Look Down)");
+
+        if (ImGui::Button("Reset Camera", ImVec2(-1, 0))) {
+            viewport_.reset();
+        }
+
+        // Camera parameters
+        ImGui::Text("Distance: %.2f", viewport_.distance);
+        ImGui::Text("Azimuth: %.1f°", viewport_.azimuth);
+        ImGui::Text("Elevation: %.1f°", viewport_.elevation);
+        ImGui::Text("Target: %.2f, %.2f, %.2f",
+                    viewport_.target.x,
+                    viewport_.target.y,
+                    viewport_.target.z);
+
+        // Scene info (if available)
+        if (scene_bounds_valid_) {
+            ImGui::Separator();
+            ImGui::Text("Scene Info:");
+            ImGui::Text("Center: %.2f, %.2f, %.2f", scene_center_.x, scene_center_.y, scene_center_.z);
+            ImGui::Text("Radius: %.2f", scene_radius_);
+        }
+
+        // Quick view buttons
+        ImGui::Text("Quick Views:");
+        if (ImGui::Button("Front", ImVec2(60, 0)))
+            viewport_.alignToAxis('z', true);
+        ImGui::SameLine();
+        if (ImGui::Button("Back", ImVec2(60, 0)))
+            viewport_.alignToAxis('z', false);
+        ImGui::SameLine();
+        if (ImGui::Button("Left", ImVec2(60, 0)))
+            viewport_.alignToAxis('x', false);
+        ImGui::SameLine();
+        if (ImGui::Button("Right", ImVec2(60, 0)))
+            viewport_.alignToAxis('x', true);
+
+        if (ImGui::Button("Top", ImVec2(60, 0)))
+            viewport_.alignToAxis('y', true);
+        ImGui::SameLine();
+        if (ImGui::Button("Bottom", ImVec2(60, 0)))
+            viewport_.alignToAxis('y', false);
+
         // Grid Settings Section
         ImGui::Separator();
         ImGui::Text("Grid Settings");
@@ -480,21 +798,19 @@ namespace gs {
 
         ImGui::Checkbox("Show Grid", &show_grid_);
 
-        if (show_grid_) {
-            const char* plane_names[] = { "YZ (X)", "XZ (Y)", "XY (Z)" };
-            int current_plane = static_cast<int>(grid_plane_);
-            if (ImGui::Combo("Grid Plane", &current_plane, plane_names, 3)) {
-                grid_plane_ = static_cast<InfiniteGridRenderer::GridPlane>(current_plane);
-            }
-
-            // Optional: Add opacity control
-            if (grid_renderer_) {
-                static float grid_opacity = 1.0f;
-                if (ImGui::SliderFloat("Grid Opacity", &grid_opacity, 0.0f, 1.0f)) {
-                    grid_renderer_->setOpacity(grid_opacity);
-                }
+        if (show_grid_ && grid_renderer_) {
+            static float grid_opacity = 1.0f;
+            if (ImGui::SliderFloat("Grid Opacity", &grid_opacity, 0.0f, 1.0f)) {
+                grid_renderer_->setOpacity(grid_opacity);
             }
         }
+
+        // View Cube Settings Section
+        ImGui::Separator();
+        ImGui::Text("View Cube");
+        ImGui::Separator();
+
+        ImGui::Checkbox("Show View Cube", &show_view_cube_);
 
         int current_iter2;
         int total_iter;
@@ -552,16 +868,33 @@ namespace gs {
     }
 
     void GSViewer::draw() {
-        // Clear color and depth buffers first
+        // Clear with a dark background
+        glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        // Draw grid first with depth testing enabled
+        // 1. Draw grid first with depth testing
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_LEQUAL);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
         drawGrid();
 
-        // Then render the splats (which will clear depth buffer again for proper compositing)
-        drawFrame();
+        // 2. Draw splats if trainer is available
+        if (trainer_) {
+            // Clear depth buffer so splats render on top of grid
+            glClear(GL_DEPTH_BUFFER_BIT);
+            glDisable(GL_DEPTH_TEST);
+            drawFrame();
+            glEnable(GL_DEPTH_TEST);
+        }
 
-        // ImGui UI (renders on top of everything)
+        // 3. Draw view cube (renders on top of everything)
+        glDisable(GL_DEPTH_TEST);
+        drawViewCube();
+        glEnable(GL_DEPTH_TEST);
+
+        // 4. ImGui UI (renders on top of everything)
         configuration();
 
         // Render all ImGui elements

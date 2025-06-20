@@ -182,44 +182,52 @@ public:
     }
 
     void set_uniform(const std::string& name, const size_t& value) {
-        GLint uni = uniform(name);
-        glUniform1i(uni, value);
+        GLint uni = uniform(name, false);
+        if (uni != -1)
+            glUniform1i(uni, value);
     }
 
     void set_uniform(const std::string& name, const int& value) {
-        GLint uni = uniform(name);
-        glUniform1i(uni, value);
+        GLint uni = uniform(name, false);
+        if (uni != -1)
+            glUniform1i(uni, value);
     }
 
     void set_uniform(const std::string& name, const float& value) {
-        GLint uni = uniform(name);
-        glUniform1f(uni, value);
+        GLint uni = uniform(name, false);
+        if (uni != -1)
+            glUniform1f(uni, value);
     }
 
     void set_uniform(const std::string& name, const glm::vec2& vector) {
-        GLint uni = uniform(name);
-        glUniform2fv(uni, 1, &vector[0]);
+        GLint uni = uniform(name, false);
+        if (uni != -1)
+            glUniform2fv(uni, 1, &vector[0]);
     }
 
     void set_uniform(const std::string& name, const glm::vec3& vector) {
-        GLint uni = uniform(name);
-        glUniform3fv(uni, 1, &vector[0]);
+        GLint uni = uniform(name, false);
+        if (uni != -1)
+            glUniform3fv(uni, 1, &vector[0]);
     }
 
     void set_uniform(const std::string& name, const glm::vec4& vector) {
-        GLint uni = uniform(name);
-        glUniform4fv(uni, 1, &vector[0]);
+        GLint uni = uniform(name, false);
+        if (uni != -1)
+            glUniform4fv(uni, 1, &vector[0]);
     }
 
     void set_uniform(const std::string& name, const glm::mat4& matrix) {
-        GLint uni = uniform(name);
-        glUniformMatrix4fv(uni, 1, GL_FALSE, &matrix[0][0]);
+        GLint uni = uniform(name, false);
+        if (uni != -1)
+            glUniformMatrix4fv(uni, 1, GL_FALSE, &matrix[0][0]);
     }
 
     // texture
     void set_uniform(const std::string& name) {
-        GLint uni = uniform(name);
-        glUniform1i(uni, 0);
+        GLint uni = uniform(name, false);
+        if (uni != -1)
+            glUniform1i(uni, 0);
     }
 
     template <typename E, int N>
@@ -264,12 +272,15 @@ private:
         return buffer.str();
     }
 
-    GLint uniform(const std::string& name) {
+    GLint uniform(const std::string& name, bool required = true) {
         if (uniforms.count(name) == 0) {
             GLint location = glGetUniformLocation(program, name.c_str());
             if (location == -1) {
-                std::cerr << "Error: cannot find uniform '" << name << "'\n";
-                exit(1);
+                if (required) {
+                    std::cerr << "Error: cannot find uniform '" << name << "'\n";
+                    exit(1);
+                }
+                return -1; // Return invalid location for optional uniforms
             }
             uniforms[name] = location;
         }

@@ -1,6 +1,5 @@
 #include "visualizer/infinite_grid_renderer.hpp"
 #include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtc/type_ptr.hpp>
 #include <iostream>
 #include <random>
 
@@ -19,13 +18,21 @@ namespace gs {
     }
 
     bool InfiniteGridRenderer::init(const std::string& shader_base_path) {
+        // Check if shader files exist
+        std::string vert_path = shader_base_path + "infinite_grid.vert";
+        std::string frag_path = shader_base_path + "infinite_grid.frag";
+
+        std::cout << "Looking for vertex shader at: " << vert_path << std::endl;
+        std::cout << "Looking for fragment shader at: " << frag_path << std::endl;
+
         // Load shaders
         try {
             grid_shader_ = std::make_shared<Shader>(
-                (shader_base_path + "/infinite_grid.vert").c_str(),
-                (shader_base_path + "/infinite_grid.frag").c_str(),
-                false  // Don't create default buffers
+                vert_path.c_str(),
+                frag_path.c_str(),
+                false // Don't create default buffers
             );
+            std::cout << "Grid shaders loaded successfully!" << std::endl;
         } catch (const std::exception& e) {
             std::cerr << "Failed to load infinite grid shaders: " << e.what() << std::endl;
             return false;
@@ -42,9 +49,8 @@ namespace gs {
         float vertices[] = {
             -1.0f, -1.0f,
             1.0f, -1.0f,
-            -1.0f,  1.0f,
-            1.0f,  1.0f
-        };
+            -1.0f, 1.0f,
+            1.0f, 1.0f};
 
         glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
@@ -66,7 +72,7 @@ namespace gs {
         std::vector<float> noise_data(size * size);
 
         // Generate blue noise pattern (simplified version)
-        std::mt19937 rng(42);  // Fixed seed for consistency
+        std::mt19937 rng(42); // Fixed seed for consistency
         std::uniform_real_distribution<float> dist(0.0f, 1.0f);
 
         for (int i = 0; i < size * size; ++i) {
@@ -96,15 +102,17 @@ namespace gs {
             return glm::vec3(p) / p.w;
         };
 
-        // Near plane corners
-        glm::vec3 near_bl = unproject(-1.0f, -1.0f, -1.0f);  // Bottom-left
-        glm::vec3 near_br = unproject( 1.0f, -1.0f, -1.0f);  // Bottom-right
-        glm::vec3 near_tl = unproject(-1.0f,  1.0f, -1.0f);  // Top-left
+        // Near plane corners in NDC
+        glm::vec3 near_bl = unproject(-1.0f, -1.0f, -1.0f); // Bottom-left
+        glm::vec3 near_br = unproject(1.0f, -1.0f, -1.0f);  // Bottom-right
+        glm::vec3 near_tl = unproject(-1.0f, 1.0f, -1.0f);  // Top-left
+        glm::vec3 near_tr = unproject(1.0f, 1.0f, -1.0f);   // Top-right
 
-        // Far plane corners
+        // Far plane corners in NDC
         glm::vec3 far_bl = unproject(-1.0f, -1.0f, 1.0f);
-        glm::vec3 far_br = unproject( 1.0f, -1.0f, 1.0f);
-        glm::vec3 far_tl = unproject(-1.0f,  1.0f, 1.0f);
+        glm::vec3 far_br = unproject(1.0f, -1.0f, 1.0f);
+        glm::vec3 far_tl = unproject(-1.0f, 1.0f, 1.0f);
+        glm::vec3 far_tr = unproject(1.0f, 1.0f, 1.0f);
 
         // Calculate origins and axes
         near_origin = near_bl;
@@ -122,23 +130,18 @@ namespace gs {
             return;
         }
 
-        // Calculate view and projection matrices
-        glm::mat4 view = glm::mat4(viewport.camera.R);
-        view[3] = glm::vec4(-viewport.camera.R * viewport.camera.t, 1.0f);
-
-        float aspect = static_cast<float>(viewport.windowSize.x) / viewport.windowSize.y;
-        float fov = glm::radians(75.0f);  // Default FOV, should match your camera settings
-        glm::mat4 projection = glm::perspective(fov, aspect, 0.01f, 10000.0f);
-
+        // Get view and projection matrices directly from viewport
+        glm::mat4 view = viewport.getViewMatrix();
+        glm::mat4 projection = viewport.getProjectionMatrix();
         glm::mat4 viewProj = projection * view;
         glm::mat4 invViewProj = glm::inverse(viewProj);
 
-        // Calculate frustum corners
+        // Calculate frustum corners in world space
         glm::vec3 near_origin, near_x, near_y, far_origin, far_x, far_y;
         calculateFrustumCorners(invViewProj, near_origin, near_x, near_y, far_origin, far_x, far_y);
 
-        // Get camera position
-        glm::vec3 view_position = -viewport.camera.R * viewport.camera.t;
+        // Camera position in world space
+        glm::vec3 view_position = viewport.getCameraPosition();
 
         // Save current OpenGL state
         GLboolean blend_enabled = glIsEnabled(GL_BLEND);
@@ -154,7 +157,7 @@ namespace gs {
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         glEnable(GL_DEPTH_TEST);
         glDepthFunc(GL_LESS);
-        glDepthMask(GL_TRUE);  // We want to write depth for the grid
+        glDepthMask(GL_TRUE);
 
         // Bind shader and set uniforms
         grid_shader_->bind();
@@ -168,7 +171,15 @@ namespace gs {
 
         grid_shader_->set_uniform("view_position", view_position);
         grid_shader_->set_uniform("matrix_viewProjection", viewProj);
+
+        // The plane index remains the same:
+        // 0: YZ plane (X normal)
+        // 1: XZ plane (Y normal) - this is the "ground" plane
+        // 2: XY plane (Z normal)
+        // In COLMAP space, Y points down, so XZ plane is still horizontal
         grid_shader_->set_uniform("plane", static_cast<int>(plane));
+
+        grid_shader_->set_uniform("opacity", opacity_);
 
         // Bind blue noise texture
         glActiveTexture(GL_TEXTURE0);
@@ -177,17 +188,17 @@ namespace gs {
 
         // Render the grid
         glBindVertexArray(vao_);
-
-        // Render the grid
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-
         glBindVertexArray(0);
+
         grid_shader_->unbind();
 
         // Restore previous OpenGL state
-        if (!blend_enabled) glDisable(GL_BLEND);
-        if (!depth_test_enabled) glDisable(GL_DEPTH_TEST);
+        if (!blend_enabled)
+            glDisable(GL_BLEND);
+        if (!depth_test_enabled)
+            glDisable(GL_DEPTH_TEST);
         glDepthMask(depth_mask);
         glBlendFunc(blend_src, blend_dst);
     }
-    }
+} // namespace gs
