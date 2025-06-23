@@ -263,23 +263,32 @@ namespace gs {
 
         std::string shader_path = std::string(PROJECT_ROOT_PATH) + "/include/visualizer/shaders/";
 
-        // Initialize grid renderer FIRST
+        // Initialize shader manager
+        try {
+            shader_manager_ = std::make_unique<ShaderManager>(shader_path);
+        } catch (const std::exception& e) {
+            std::cerr << "Failed to initialize shader manager: " << e.what() << std::endl;
+            return;
+        }
+
+        // Initialize grid renderer
         grid_renderer_ = std::make_unique<InfiniteGridRenderer>();
         if (!grid_renderer_->init(shader_path)) {
             std::cerr << "Failed to initialize infinite grid renderer" << std::endl;
             grid_renderer_.reset();
         } else {
             std::cout << "Grid renderer initialized successfully" << std::endl;
-            // Set initial grid visibility to true
             show_grid_ = true;
-            grid_plane_ = InfiniteGridRenderer::GridPlane::XZ; // Ensure XZ plane
+            grid_plane_ = InfiniteGridRenderer::GridPlane::XZ;
         }
 
-        // Then initialize other renderers...
-        quadShader_ = std::make_shared<Shader>(
-            (shader_path + "/screen_quad.vert").c_str(),
-            (shader_path + "/screen_quad.frag").c_str(),
-            true);
+        // Load screen quad shader through shader manager
+        try {
+            shader_manager_->loadShader("screen_quad", "screen_quad.vert", "screen_quad.frag", true);
+        } catch (const std::exception& e) {
+            std::cerr << "Failed to load screen quad shader: " << e.what() << std::endl;
+            return;
+        }
 
         // Initialize screen renderer with interop support if available
 #ifdef CUDA_GL_INTEROP_ENABLED
@@ -553,7 +562,9 @@ namespace gs {
         screen_renderer_->uploadData(image.data_ptr<uchar>(), reso.x, reso.y);
 #endif
 
-        screen_renderer_->render(quadShader_, viewport_);
+        // Get the shader from shader manager
+        auto quadShader = shader_manager_->getShader("screen_quad");
+        screen_renderer_->render(quadShader, viewport_);
 
         // Re-enable depth test for next frame
         glEnable(GL_DEPTH_TEST);

@@ -6,6 +6,7 @@
 #include "core/trainer.hpp"
 #include "visualizer/infinite_grid_renderer.hpp"
 #include "visualizer/renderer.hpp"
+#include "visualizer/shader_manager.hpp"
 #include "visualizer/view_cube_renderer.hpp"
 // clang-format off
 // CRITICAL: GLAD must be included before GLFW to avoid OpenGL header conflicts
@@ -66,9 +67,11 @@ namespace gs {
 
         Viewport viewport_;
 
-        std::shared_ptr<ScreenQuadRenderer> screen_renderer_;
+        // Shader management
+        std::unique_ptr<ShaderManager> shader_manager_;
 
-        std::shared_ptr<Shader> quadShader_;
+        // Renderers
+        std::shared_ptr<ScreenQuadRenderer> screen_renderer_;
 
         // Grid renderer
         std::unique_ptr<InfiniteGridRenderer> grid_renderer_;

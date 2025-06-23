@@ -198,6 +198,7 @@ target_compile_options(gaussian_kernels PRIVATE
 set(VISUALIZER_SOURCES
         src/visualizer/infinite_grid_renderer.cpp
         src/visualizer/view_cube_renderer.cpp
+        src/visualizer/shader_manager.cpp
 )
 
 # Add CUDA interop source only if available
