@@ -10,10 +10,12 @@
 #include "visualizer/gui/render_settings_panel.hpp"
 #include "visualizer/gui/training_control_panel.hpp"
 #include "visualizer/gui/visualization_panel.hpp"
+#include "visualizer/gui/dataset_viewer_panel.hpp"
 #include "visualizer/infinite_grid_renderer.hpp"
 #include "visualizer/renderer.hpp"
 #include "visualizer/shader_manager.hpp"
 #include "visualizer/view_cube_renderer.hpp"
+#include "visualizer/camera_frustum_renderer.hpp"
 #include "visualizer/viewport.hpp"
 #include <chrono>
 #include <condition_variable>
@@ -78,6 +80,9 @@ namespace gs {
         std::unique_ptr<ViewCubeRenderer> view_cube_renderer_;
         bool show_view_cube_ = true;
 
+        // Camera frustum renderer
+        std::unique_ptr<CameraFrustumRenderer> camera_renderer_;
+
         GLFWwindow* window_;
 
     private:
@@ -109,6 +114,7 @@ namespace gs {
         ~GSViewer();
 
         void setTrainer(Trainer* trainer);
+        void setDataset(std::shared_ptr<CameraDataset> dataset);
 
         void drawFrame();
 
@@ -119,6 +125,7 @@ namespace gs {
 
         // Add accessor to check if trainer is set
         bool hasTrainer() const { return trainer_ != nullptr; }
+        bool hasDataset() const { return dataset_ != nullptr; }
 
     public:
         std::shared_ptr<TrainingInfo> info_;
@@ -127,13 +134,19 @@ namespace gs {
 
         std::mutex splat_mtx_;
 
+        // Dataset panel needs to be accessible for key handling
+        std::shared_ptr<DatasetViewerPanel> dataset_panel_;
+
     private:
         void drawGrid();
         void drawViewCube();
+        void drawCameras();
+        void drawImageOverlay();
 
         std::shared_ptr<RenderingConfig> config_;
 
         Trainer* trainer_;
+        std::shared_ptr<CameraDataset> dataset_;
 
         // Store scene bounds for reference (but don't auto-focus on them)
         glm::vec3 scene_center_{0.0f, 0.0f, 0.0f};

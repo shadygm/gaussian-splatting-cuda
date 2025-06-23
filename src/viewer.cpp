@@ -176,6 +176,37 @@ namespace gs {
         }
 
         if (action == GLFW_PRESS || action == GLFW_REPEAT) {
+            // Handle dataset navigation if available
+            if (auto* gs_viewer = dynamic_cast<GSViewer*>(detail_)) {
+                if (gs_viewer->dataset_panel_) {
+                    bool handled = false;
+
+                    switch (key) {
+                    case GLFW_KEY_LEFT:
+                        if (gs_viewer->dataset_panel_->getCurrentCameraIndex() > 0) {
+                            int new_idx = gs_viewer->dataset_panel_->getCurrentCameraIndex() - 1;
+                            // This is a bit of a hack - we need a setter in the panel
+                            // For now, we'll handle it through the key callback
+                            handled = true;
+                        }
+                        break;
+                    case GLFW_KEY_RIGHT:
+                        // Similar for right arrow
+                        handled = true;
+                        break;
+                    case GLFW_KEY_ESCAPE:
+                        if (gs_viewer->dataset_panel_->shouldShowImageOverlay()) {
+                            // Toggle overlay off
+                            handled = true;
+                        }
+                        break;
+                    }
+
+                    if (handled) return;
+                }
+            }
+
+            // Original key handling
             switch (key) {
             case GLFW_KEY_G:
                 detail_->show_grid_ = !detail_->show_grid_;
@@ -247,15 +278,35 @@ namespace gs {
 #endif
 
         // Initialize view cube renderer
+        std::cout << "Initializing view cube renderer..." << std::endl;
         view_cube_renderer_ = std::make_unique<ViewCubeRenderer>();
         if (!view_cube_renderer_->init(shader_path)) {
             std::cerr << "Failed to initialize view cube renderer" << std::endl;
             view_cube_renderer_.reset();
+        } else {
+            std::cout << "View cube renderer initialized successfully" << std::endl;
+        }
+
+        // Initialize camera frustum renderer
+        std::cout << "Initializing camera frustum renderer..." << std::endl;
+        try {
+            camera_renderer_ = std::make_unique<CameraFrustumRenderer>();
+            if (!camera_renderer_->init(shader_path)) {
+                std::cerr << "Failed to initialize camera frustum renderer" << std::endl;
+                camera_renderer_.reset();
+            } else {
+                std::cout << "Camera frustum renderer initialized successfully" << std::endl;
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "Exception during camera frustum renderer initialization: " << e.what() << std::endl;
+            camera_renderer_.reset();
         }
 
         // NOW setup GUI panels if this is a GSViewer - after GUI manager is initialized
+        std::cout << "Setting up GUI panels..." << std::endl;
         if (auto* gs_viewer = dynamic_cast<GSViewer*>(this)) {
-            if (gs_viewer->hasTrainer()) {
+            if (gs_viewer->hasTrainer() || gs_viewer->hasDataset()) {
+                std::cout << "GSViewer has trainer or dataset, setting up panels..." << std::endl;
                 gs_viewer->setupGUIPanels();
             }
         }
@@ -285,7 +336,8 @@ namespace gs {
 
     GSViewer::GSViewer(std::string title, int width, int height)
         : ViewerDetail(title, width, height),
-          trainer_(nullptr) {
+          trainer_(nullptr),
+          dataset_(nullptr) {
 
         config_ = std::make_shared<RenderingConfig>();
         info_ = std::make_shared<TrainingInfo>();
@@ -323,22 +375,63 @@ namespace gs {
         // Otherwise, panels will be set up later in run() or draw()
     }
 
-    void GSViewer::setupGUIPanels() {
-        // Create panels
-        auto training_panel = std::make_shared<TrainingControlPanel>(trainer_, info_);
-        auto render_panel = std::make_shared<RenderSettingsPanel>(config_);
-        auto camera_panel = std::make_shared<CameraControlPanel>(&viewport_);
-        auto viz_panel = std::make_shared<VisualizationPanel>(
-            grid_renderer_.get(),
-            view_cube_renderer_.get(),
-            &show_grid_,
-            &show_view_cube_);
+    void GSViewer::setDataset(std::shared_ptr<CameraDataset> dataset) {
+        dataset_ = dataset;
 
-        // Add panels to manager
-        gui_manager_->addPanel(training_panel);
-        gui_manager_->addPanel(render_panel);
-        gui_manager_->addPanel(camera_panel);
-        gui_manager_->addPanel(viz_panel);
+        // Try to setup panels if GUI manager exists
+        if (gui_manager_) {
+            setupGUIPanels();
+        }
+    }
+
+    void GSViewer::setupGUIPanels() {
+        std::cout << "GSViewer::setupGUIPanels() called" << std::endl;
+
+        // Clear existing panels
+        while (gui_manager_->getPanelCount() > 0) {
+            gui_manager_->removePanel("Training Control");
+            gui_manager_->removePanel("Rendering Settings");
+            gui_manager_->removePanel("Camera Controls");
+            gui_manager_->removePanel("Visualization Settings");
+            gui_manager_->removePanel("Dataset Viewer");
+        }
+
+        try {
+            // Create panels based on what's available
+            if (trainer_) {
+                std::cout << "Creating training panels..." << std::endl;
+                auto training_panel = std::make_shared<TrainingControlPanel>(trainer_, info_);
+                auto render_panel = std::make_shared<RenderSettingsPanel>(config_);
+                gui_manager_->addPanel(training_panel);
+                gui_manager_->addPanel(render_panel);
+            }
+
+            // Always add camera and visualization panels
+            std::cout << "Creating camera and visualization panels..." << std::endl;
+            auto camera_panel = std::make_shared<CameraControlPanel>(&viewport_);
+            auto viz_panel = std::make_shared<VisualizationPanel>(
+                grid_renderer_.get(),
+                view_cube_renderer_.get(),
+                &show_grid_,
+                &show_view_cube_);
+
+            gui_manager_->addPanel(camera_panel);
+            gui_manager_->addPanel(viz_panel);
+
+            // Add dataset viewer if dataset is available
+            if (dataset_ && camera_renderer_) {
+                std::cout << "Creating dataset viewer panel..." << std::endl;
+                std::cout << "Dataset has " << dataset_->get_cameras().size() << " cameras" << std::endl;
+                dataset_panel_ = std::make_shared<DatasetViewerPanel>(
+                    dataset_, camera_renderer_.get(), &viewport_);
+                gui_manager_->addPanel(dataset_panel_);
+                std::cout << "Dataset viewer panel created successfully" << std::endl;
+            }
+
+            std::cout << "GUI panels setup complete" << std::endl;
+        } catch (const std::exception& e) {
+            std::cerr << "Exception during GUI panel setup: " << e.what() << std::endl;
+        }
     }
 
     void GSViewer::drawFrame() {
@@ -577,9 +670,46 @@ namespace gs {
         }
     }
 
+    void GSViewer::drawCameras() {
+        if (camera_renderer_ && dataset_panel_) {
+            int highlight_idx = dataset_panel_->getCurrentCameraIndex();
+            camera_renderer_->render(viewport_, highlight_idx);
+        }
+    }
+
+    void GSViewer::drawImageOverlay() {
+        if (!dataset_panel_ || !dataset_panel_->shouldShowImageOverlay()) {
+            return;
+        }
+
+        auto image = dataset_panel_->getCurrentImage();
+        if (!image.defined() || image.numel() == 0) {
+            return;
+        }
+
+        // Simple overlay rendering in corner
+        // This is a simplified version - you might want to use screen_renderer_
+        // or create a dedicated overlay renderer
+        glDisable(GL_DEPTH_TEST);
+
+        // Draw semi-transparent overlay
+        float overlay_width = 400.0f;
+        float overlay_height = overlay_width * image.size(1) / image.size(2);
+        float margin = 20.0f;
+
+        // Position in bottom-right corner
+        float x = viewport_.windowSize.x - overlay_width - margin;
+        float y = margin;
+
+        // Here you would render the image using a quad
+        // For now, this is a placeholder
+
+        glEnable(GL_DEPTH_TEST);
+    }
+
     void GSViewer::draw() {
-        // Check if we need to set up panels (deferred from setTrainer)
-        if (trainer_ && gui_manager_ && gui_manager_->getPanelCount() == 0) {
+        // Check if we need to set up panels (deferred from setTrainer/setDataset)
+        if ((trainer_ || dataset_) && gui_manager_ && gui_manager_->getPanelCount() == 0) {
             setupGUIPanels();
         }
 
@@ -595,7 +725,10 @@ namespace gs {
 
         drawGrid();
 
-        // 2. Draw splats if trainer is available
+        // 2. Draw camera frustums
+        drawCameras();
+
+        // 3. Draw splats if trainer is available
         if (trainer_) {
             // Clear depth buffer so splats render on top of grid
             glClear(GL_DEPTH_BUFFER_BIT);
@@ -604,23 +737,28 @@ namespace gs {
             glEnable(GL_DEPTH_TEST);
         }
 
-        // 3. Draw view cube (renders on top of everything)
+        // 4. Draw view cube (renders on top of everything)
         glDisable(GL_DEPTH_TEST);
         drawViewCube();
         glEnable(GL_DEPTH_TEST);
 
-        // 4. GUI rendering
+        // 5. Draw image overlay if enabled
+        drawImageOverlay();
+
+        // 6. GUI rendering
         gui_manager_->beginFrame();
         gui_manager_->render();
 
         // Handle training start trigger
-        auto training_panel = std::dynamic_pointer_cast<TrainingControlPanel>(
-            gui_manager_->getPanel("Training Control"));
-        if (training_panel && training_panel->shouldStartTraining() && notifier_) {
-            std::lock_guard<std::mutex> lock(notifier_->mtx);
-            notifier_->ready = true;
-            notifier_->cv.notify_one();
-            training_panel->resetStartTrigger();
+        if (trainer_) {
+            auto training_panel = std::dynamic_pointer_cast<TrainingControlPanel>(
+                gui_manager_->getPanel("Training Control"));
+            if (training_panel && training_panel->shouldStartTraining() && notifier_) {
+                std::lock_guard<std::mutex> lock(notifier_->mtx);
+                notifier_->ready = true;
+                notifier_->cv.notify_one();
+                training_panel->resetStartTrigger();
+            }
         }
 
         gui_manager_->endFrame();

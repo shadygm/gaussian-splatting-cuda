@@ -204,6 +204,8 @@ set(VISUALIZER_SOURCES
         src/visualizer/gui/render_settings_panel.cpp
         src/visualizer/gui/camera_control_panel.cpp
         src/visualizer/gui/visualization_panel.cpp
+        src/visualizer/camera_frustum_renderer.cpp
+        src/visualizer/gui/dataset_viewer_panel.cpp
 )
 
 # Add CUDA interop source only if available

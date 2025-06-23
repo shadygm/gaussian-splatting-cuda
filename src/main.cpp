@@ -47,6 +47,9 @@ int main(int argc, char* argv[]) {
             // GUI Mode: Create viewer and run it in main thread
             auto viewer = trainer->create_and_get_viewer();
             if (viewer) {
+                // Pass dataset to viewer for camera visualization
+                viewer->setDataset(dataset);
+
                 // Start training in a separate thread
                 std::thread training_thread([&trainer]() {
                     try {
