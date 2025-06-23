@@ -202,7 +202,8 @@ namespace gs {
                         break;
                     }
 
-                    if (handled) return;
+                    if (handled)
+                        return;
                 }
             }
 

@@ -1,63 +1,56 @@
 #pragma once
 
-#include "visualizer/gui/gui_manager.hpp"
 #include "core/dataset.hpp"
+#include "visualizer/gui/gui_manager.hpp"
 #include <memory>
+#include <torch/torch.h>
+#include <vector>
+
+// Forward declarations
+class Viewport; // Viewport is not in gs namespace
 
 namespace gs {
 
-    // Forward declarations
     class CameraFrustumRenderer;
-}
-
-// Viewport is not in gs namespace
-class Viewport;
-
-namespace gs {
 
     class DatasetViewerPanel : public GUIPanel {
     public:
-        DatasetViewerPanel(
-            std::shared_ptr<CameraDataset> dataset,
-            CameraFrustumRenderer* frustum_renderer,
-            Viewport* viewport);
+        DatasetViewerPanel(std::shared_ptr<CameraDataset> dataset,
+                           CameraFrustumRenderer* frustum_renderer,
+                           Viewport* viewport);
 
         void render() override;
 
-        // Get current camera index for highlighting
+        // Public methods for external access
         int getCurrentCameraIndex() const { return current_camera_idx_; }
-
-        // Navigation methods
-        void nextCamera();
-        void previousCamera();
-        void setShowImageOverlay(bool show) { show_image_overlay_ = show; }
-
-        // Check if image overlay should be shown
         bool shouldShowImageOverlay() const { return show_image_overlay_; }
-
-        // Get current camera's image for overlay
-        torch::Tensor getCurrentImage();
+        torch::Tensor getCurrentImage() const { return current_image_; }
 
     private:
+        void renderDatasetInfo();
         void renderCameraControls();
         void renderImageControls();
-        void renderDatasetInfo();
+
         void loadCurrentCameraImage();
         void jumpToCamera(int index);
+        void previousCamera();
+        void nextCamera();
 
         std::shared_ptr<CameraDataset> dataset_;
         CameraFrustumRenderer* frustum_renderer_;
         Viewport* viewport_;
 
-        // State
-        int current_camera_idx_ = 0;
+        // Camera visualization state
         bool show_train_cameras_ = true;
         bool show_test_cameras_ = true;
-        bool show_image_overlay_ = false;
-        float frustum_scale_ = 2.0f;  // Increased default scale
+        float frustum_scale_ = 1.0f;
 
-        // Cached data
+        // Image viewing state
+        int current_camera_idx_ = 0;
+        bool show_image_overlay_ = false;
         torch::Tensor current_image_;
+
+        // Camera indices
         std::vector<int> train_indices_;
         std::vector<int> test_indices_;
         std::vector<bool> is_test_camera_;

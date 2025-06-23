@@ -1,9 +1,9 @@
 #include "visualizer/gui/dataset_viewer_panel.hpp"
 #include "visualizer/camera_frustum_renderer.hpp"
 #include "visualizer/viewport.hpp"
-#include <imgui.h>
 #include <algorithm>
 #include <cmath>
+#include <imgui.h>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -124,12 +124,16 @@ namespace gs {
                 std::cout << "Scene bounds - Center: ("
                           << mean_data[0] << ", " << mean_data[1] << ", " << mean_data[2]
                           << "), Radius: " << max_dist << std::endl;
+
+                // Set initial frustum scale based on scene size
+                frustum_scale_ = frustum_renderer_->getFrustumScale();
             }
         }
     }
 
     void DatasetViewerPanel::render() {
-        if (!visible_) return;
+        if (!visible_)
+            return;
 
         ImGui::Begin(title_.c_str(), &visible_);
 
@@ -171,7 +175,7 @@ namespace gs {
         }
 
         // Frustum scale
-        if (ImGui::SliderFloat("Frustum Scale", &frustum_scale_, 0.1f, 10.0f)) {
+        if (ImGui::SliderFloat("Frustum Scale", &frustum_scale_, 0.0001f, 0.1f, "%.4f", ImGuiSliderFlags_Logarithmic)) {
             frustum_renderer_->setFrustumScale(frustum_scale_);
         }
 
@@ -240,10 +244,9 @@ namespace gs {
         const auto& cam = dataset_->get_cameras()[current_camera_idx_];
 
         try {
-            // For now, just load a placeholder or skip image loading
-            // since original_image() doesn't exist
-            current_image_ = torch::Tensor();
-            std::cerr << "Image loading not implemented for camera " << current_camera_idx_ << std::endl;
+            // Load the image for the current camera
+            current_image_ = cam->load_and_get_image();
+            std::cout << "Loaded image for camera " << current_camera_idx_ << std::endl;
         } catch (const std::exception& e) {
             std::cerr << "Error loading image for camera " << current_camera_idx_ << ": " << e.what() << std::endl;
             current_image_ = torch::Tensor();
@@ -265,7 +268,8 @@ namespace gs {
                 return;
             }
 
-            w2c_t = w2c_t.to(torch::kCPU).squeeze(0).transpose(0, 1);
+            // IMPORTANT: Do NOT transpose - it's already in the correct form!
+            w2c_t = w2c_t.to(torch::kCPU).squeeze(0);
             torch::Tensor R = w2c_t.slice(0, 0, 3).slice(1, 0, 3);
             torch::Tensor t = w2c_t.slice(0, 0, 3).slice(1, 3);
             torch::Tensor cam_center = -torch::matmul(R.transpose(0, 1), t.squeeze());
@@ -276,23 +280,28 @@ namespace gs {
             }
 
             auto center_data = cam_center.accessor<float, 1>();
-            glm::vec3 position(center_data[0], center_data[1], center_data[2]);
+            glm::vec3 position(center_data[0], -center_data[1], -center_data[2]); // Apply coordinate transform
 
             // Extract view direction from world_view_transform
-            // The view direction is the negative Z axis of the camera
+            // The view direction is the negative Z axis of the camera in world space
             auto R_data = R.accessor<float, 2>();
-            glm::vec3 forward(-R_data[2][0], -R_data[2][1], -R_data[2][2]);
-            glm::vec3 up(R_data[1][0], R_data[1][1], R_data[1][2]);
+            glm::vec3 forward(-R_data[2][0], R_data[2][1], R_data[2][2]); // Note: Y and Z flipped for OpenGL
 
-            // Normalize directions
-            forward = glm::normalize(forward);
-            up = glm::normalize(up);
+            // Set viewport to look from behind the camera towards its view direction
+            glm::vec3 view_position = position - forward * 0.5f; // Step back a bit
+            glm::vec3 target = position + forward * 2.0f;        // Look forward
 
-            // Set camera to look at the scene from this position
-            viewport_->target = position + forward * 5.0f; // Look 5 units ahead
-            viewport_->azimuth = std::atan2(forward.x, forward.z) * 180.0f / M_PI;
-            viewport_->elevation = std::asin(-forward.y) * 180.0f / M_PI;
-            viewport_->distance = 0.1f; // Very close to camera position
+            // Calculate spherical coordinates
+            glm::vec3 offset = view_position - target;
+            float distance = glm::length(offset);
+            float azimuth = atan2(offset.x, offset.z) * 180.0f / M_PI;
+            float elevation = asin(offset.y / distance) * 180.0f / M_PI;
+
+            // Update viewport
+            viewport_->target = target;
+            viewport_->distance = distance;
+            viewport_->azimuth = azimuth;
+            viewport_->elevation = elevation;
 
             std::cout << "Jumped to camera " << index << " at position ("
                       << position.x << ", " << position.y << ", " << position.z << ")" << std::endl;
@@ -302,27 +311,20 @@ namespace gs {
         }
     }
 
-    void DatasetViewerPanel::nextCamera() {
-        int camera_count = static_cast<int>(dataset_->get_cameras().size());
-        current_camera_idx_ = std::min(camera_count - 1, current_camera_idx_ + 1);
-        loadCurrentCameraImage();
-    }
-
     void DatasetViewerPanel::previousCamera() {
-        current_camera_idx_ = std::max(0, current_camera_idx_ - 1);
+        current_camera_idx_--;
+        if (current_camera_idx_ < 0) {
+            current_camera_idx_ = static_cast<int>(dataset_->get_cameras().size()) - 1;
+        }
         loadCurrentCameraImage();
     }
 
-    torch::Tensor DatasetViewerPanel::getCurrentImage() {
-        if (current_camera_idx_ < 0 || current_camera_idx_ >= static_cast<int>(dataset_->get_cameras().size())) {
-            return torch::Tensor();
+    void DatasetViewerPanel::nextCamera() {
+        current_camera_idx_++;
+        if (current_camera_idx_ >= static_cast<int>(dataset_->get_cameras().size())) {
+            current_camera_idx_ = 0;
         }
-
-        if (!current_image_.defined()) {
-            loadCurrentCameraImage();
-        }
-
-        return current_image_;
+        loadCurrentCameraImage();
     }
 
 } // namespace gs

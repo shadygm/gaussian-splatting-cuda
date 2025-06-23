@@ -1,9 +1,10 @@
 #include "visualizer/camera_frustum_renderer.hpp"
 #include "visualizer/gl_headers.hpp"
-#include <iostream>
+#include "visualizer/viewport.hpp"
 #include <filesystem>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <iostream>
 
 namespace gs {
 
@@ -63,21 +64,25 @@ namespace gs {
     }
 
     void CameraFrustumRenderer::createFrustumGeometry() {
-        // Create a simple frustum with 5 vertices (apex + 4 corners)
+        // Create a pyramid frustum matching the GitHub example
+        // In the GitHub code: apex at -0.5, base at +0.5
+        // This creates a frustum pointing along +Z in camera space
         std::vector<glm::vec3> vertices = {
-            glm::vec3(0.0f, 0.0f, 0.0f),    // 0: Camera position (apex)
-            glm::vec3(-1.0f, -1.0f, 1.0f),  // 1: Bottom-left far
-            glm::vec3( 1.0f, -1.0f, 1.0f),  // 2: Bottom-right far
-            glm::vec3( 1.0f,  1.0f, 1.0f),  // 3: Top-right far
-            glm::vec3(-1.0f,  1.0f, 1.0f),  // 4: Top-left far
+            // Apex (camera position) - behind the base
+            glm::vec3( 0.0f,  0.0f, -0.5f),  // 0
+            // Base vertices (image plane, in front along +Z)
+            glm::vec3(-0.5f, -0.5f,  0.5f),  // 1 bottom-left
+            glm::vec3( 0.5f, -0.5f,  0.5f),  // 2 bottom-right
+            glm::vec3( 0.5f,  0.5f,  0.5f),  // 3 top-right
+            glm::vec3(-0.5f,  0.5f,  0.5f),  // 4 top-left
         };
 
-        // Indices for line drawing
+        // Indices for line drawing (wireframe)
         std::vector<unsigned int> indices = {
+            // Base rectangle
+            1, 2,  2, 3,  3, 4,  4, 1,
             // Lines from apex to corners
-            0, 1,  0, 2,  0, 3,  0, 4,
-            // Rectangle at far plane
-            1, 2,  2, 3,  3, 4,  4, 1
+            0, 1,  0, 2,  0, 3,  0, 4
         };
 
         num_indices_ = indices.size();
@@ -98,96 +103,170 @@ namespace gs {
         glEnableVertexAttribArray(0);
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*)0);
 
-        // Upload indices
+        // Upload index data
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo_);
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned int),
                      indices.data(), GL_STATIC_DRAW);
 
         glBindVertexArray(0);
+        std::cout << "Frustum geometry created with " << vertices.size()
+                  << " vertices and " << indices.size() << " indices" << std::endl;
     }
+
 
     void CameraFrustumRenderer::setCameras(const std::vector<std::shared_ptr<Camera>>& cameras,
                                            const std::vector<bool>& is_test_camera) {
         cameras_ = cameras;
         is_test_camera_ = is_test_camera;
 
-        std::cout << "CameraFrustumRenderer: Set " << cameras_.size() << " cameras" << std::endl;
+        std::cout << "Setting " << cameras.size() << " cameras" << std::endl;
 
-        // Update instance buffer with new camera data
-        if (initialized_) {
-            updateInstanceBuffer();
-        }
+        // Don't calculate scene bounds here - cameras might not be initialized yet
+        // Just set a default scale
+        frustum_scale_ = 0.1f;
+
+        updateInstanceBuffer();
     }
 
-    void CameraFrustumRenderer::updateInstanceBuffer() {
-        if (cameras_.empty()) {
-            std::cout << "No cameras to update in instance buffer" << std::endl;
+    void CameraFrustumRenderer::calculateSceneBounds() {
+        if (cameras_.empty())
+            return;
+
+        std::vector<glm::vec3> positions;
+        positions.reserve(cameras_.size());
+
+        for (size_t i = 0; i < cameras_.size(); ++i) {
+            try {
+                const auto& cam = cameras_[i];
+                auto w2c_t = cam->world_view_transform();
+                if (!w2c_t.defined() || w2c_t.numel() == 0)
+                    continue;
+
+                // IMPORTANT: Do NOT transpose - it's already in the correct form!
+                w2c_t = w2c_t.to(torch::kCPU).squeeze(0);
+
+                // Extract R and t
+                torch::Tensor R = w2c_t.slice(0, 0, 3).slice(1, 0, 3);
+                torch::Tensor t = w2c_t.slice(0, 0, 3).slice(1, 3);
+
+                // Camera position: C = -R^T * t
+                torch::Tensor cam_pos = -torch::matmul(R.transpose(0, 1), t.squeeze());
+                auto pos_data = cam_pos.accessor<float, 1>();
+
+                // Apply coordinate transformation for display
+                glm::vec3 cam_pos_opengl(pos_data[0], -pos_data[1], -pos_data[2]);
+                positions.push_back(cam_pos_opengl);
+
+            } catch (const std::exception& e) {
+                std::cerr << "Error calculating bounds for camera " << i << ": " << e.what() << std::endl;
+            }
+        }
+
+        if (positions.empty()) {
+            std::cerr << "No valid camera positions found!" << std::endl;
             return;
         }
 
-        struct InstanceData {
-            glm::mat4 camera_to_world;
-            glm::vec3 color;
-            float fov_x;
-            float fov_y;
-            float aspect;
-            float padding[2]; // Ensure proper alignment
-        };
+        // Calculate centroid
+        scene_center_ = glm::vec3(0.0f);
+        for (const auto& pos : positions) {
+            scene_center_ += pos;
+        }
+        scene_center_ /= positions.size();
+
+        // Calculate radius
+        scene_radius_ = 0.0f;
+        for (const auto& pos : positions) {
+            float dist = glm::length(pos - scene_center_);
+            scene_radius_ = std::max(scene_radius_, dist);
+        }
+
+        std::cout << "Scene bounds - Center: (" << scene_center_.x << ", "
+                  << scene_center_.y << ", " << scene_center_.z
+                  << "), Radius: " << scene_radius_ << std::endl;
+        std::cout << "Found " << positions.size() << " valid camera positions" << std::endl;
+    }
+
+    void CameraFrustumRenderer::updateInstanceBuffer() {
+        if (!initialized_ || cameras_.empty()) {
+            return;
+        }
 
         std::vector<InstanceData> instance_data;
         instance_data.reserve(cameras_.size());
 
         int valid_cameras = 0;
+
         for (size_t i = 0; i < cameras_.size(); ++i) {
-            const auto& cam = cameras_[i];
-
-            // Skip cameras based on visibility settings
-            if (is_test_camera_[i] && !show_test_) continue;
-            if (!is_test_camera_[i] && !show_train_) continue;
-
-            InstanceData data;
+            // Skip if visibility doesn't match
+            if (!((is_test_camera_[i] && show_test_) || (!is_test_camera_[i] && show_train_))) {
+                continue;
+            }
 
             try {
-                // Get world_view_transform which is already transposed in Camera constructor
-                // This is actually world-to-camera transform
+                const auto& cam = cameras_[i];
+                InstanceData data;
 
-                auto w2c_transposed = cam->world_view_transform();
-                if (!w2c_transposed.defined() || w2c_transposed.size(0) != 1 || w2c_transposed.size(1) != 4 || w2c_transposed.size(2) != 4) {
+                // Get world-to-camera transform
+                // IMPORTANT: This matrix is already transposed in the Camera constructor!
+                auto w2c_tensor = cam->world_view_transform();
+                if (!w2c_tensor.defined() || w2c_tensor.size(0) != 1 || w2c_tensor.size(1) != 4 || w2c_tensor.size(2) != 4) {
                     std::cerr << "Camera " << i << " has invalid transform, skipping" << std::endl;
                     continue;
                 }
 
-                // Convert to CPU and get the actual transform
-                w2c_transposed = w2c_transposed.to(torch::kCPU).squeeze(0);
+                // Convert to CPU and squeeze batch dimension
+                w2c_tensor = w2c_tensor.to(torch::kCPU).squeeze(0);
 
-                // We need the actual world-to-camera transform (transpose back)
-                torch::Tensor w2c = w2c_transposed.transpose(0, 1);
+                // Extract the 3x3 rotation and 3x1 translation
+                torch::Tensor R = w2c_tensor.slice(0, 0, 3).slice(1, 0, 3);
+                torch::Tensor t = w2c_tensor.slice(0, 0, 3).slice(1, 3);
 
-                // Extract rotation and translation
-                torch::Tensor R = w2c.slice(0, 0, 3).slice(1, 0, 3);
-                torch::Tensor t = w2c.slice(0, 0, 3).slice(1, 3);
-
-                // Camera position in world space: C = -R^T * t
-                torch::Tensor cam_pos = -torch::matmul(R.transpose(0, 1), t.squeeze());
-
-                // Build camera-to-world transform
-                glm::mat4 c2w = glm::mat4(1.0f);
-
-                // Set rotation (R^T)
+                // Convert to GLM for easier manipulation (matching GitHub example)
                 auto R_data = R.accessor<float, 2>();
-                for (int i = 0; i < 3; ++i) {
-                    for (int j = 0; j < 3; ++j) {
-                        c2w[j][i] = R_data[i][j]; // Transpose
+                torch::Tensor t_squeezed = t.squeeze();
+                auto t_data = t_squeezed.accessor<float, 1>();
+
+                // Build Rwc (camera-to-world rotation) = R^T
+                glm::mat4 Rwc = glm::mat4(1.0f);
+                for (int row = 0; row < 3; ++row) {
+                    for (int col = 0; col < 3; ++col) {
+                        Rwc[col][row] = R_data[row][col]; // Transpose from torch to glm
                     }
                 }
 
-                // Set translation
-                auto pos_data = cam_pos.accessor<float, 1>();
-                c2w[3][0] = pos_data[0];
-                c2w[3][1] = pos_data[1];
-                c2w[3][2] = pos_data[2];
+                // Camera position in world space (matching GitHub)
+                glm::vec3 tvec(t_data[0], t_data[1], t_data[2]);
+                glm::vec3 worldPos = -glm::vec3(Rwc * glm::vec4(tvec, 1.0));
+                glm::vec3 position = glm::vec3(worldPos.x, -worldPos.y, -worldPos.z);
+
+                // Looking direction is the third column of Rwc (matching GitHub)
+                glm::vec3 worldDir = -glm::vec3(Rwc[2]); // Camera looks along -Z in world space
+                glm::vec3 lookingDir = glm::normalize(glm::vec3(worldDir.x, -worldDir.y, -worldDir.z));
+
+                // Set orientation using quatLookAt (matching GitHub)
+                glm::quat orientation = glm::quatLookAt(lookingDir, glm::vec3(0.0f, 1.0f, 0.0f));
+
+                // Build the final transformation matrix
+                glm::mat4 c2w = glm::mat4(1.0f);
+                c2w = glm::translate(c2w, position);
+                c2w = c2w * glm::mat4_cast(orientation);
+                // Note: GitHub example also scales by 0.2, but we handle that in the shader
 
                 data.camera_to_world = c2w;
+
+                // Debug: print camera info
+                if (i < 3 || (i % 10 == 0)) {
+                    std::cout << "Camera " << i << " position: ("
+                              << position.x << ", "
+                              << position.y << ", "
+                              << position.z << ")" << std::endl;
+
+                    std::cout << "Camera " << i << " looking direction: ("
+                              << lookingDir.x << ", "
+                              << lookingDir.y << ", "
+                              << lookingDir.z << ")" << std::endl;
+                }
 
                 // Set color based on train/test
                 data.color = is_test_camera_[i] ? test_color_ : train_color_;
@@ -212,6 +291,7 @@ namespace gs {
         }
 
         std::cout << "Updating instance buffer with " << valid_cameras << " valid cameras" << std::endl;
+        std::cout << "Scene radius: " << scene_radius_ << ", Frustum scale: " << frustum_scale_ << std::endl;
 
         // Upload instance data
         glBindBuffer(GL_ARRAY_BUFFER, instance_vbo_);
@@ -252,8 +332,31 @@ namespace gs {
         // Update instance buffer with current visibility settings
         updateInstanceBuffer();
 
-        // Count visible cameras
+        // Count visible cameras and debug first few positions
         int visible_count = 0;
+        static bool debug_printed = false;
+        if (!debug_printed) {
+            std::cout << "\n=== Camera Frustum Positions in Render ===" << std::endl;
+            for (size_t i = 0; i < std::min(size_t(5), cameras_.size()); ++i) {
+                if ((is_test_camera_[i] && show_test_) || (!is_test_camera_[i] && show_train_)) {
+                    const auto& cam = cameras_[i];
+                    auto w2c_t = cam->world_view_transform();
+                    if (w2c_t.defined() && w2c_t.numel() > 0) {
+                        w2c_t = w2c_t.to(torch::kCPU).squeeze(0);
+                        auto R = w2c_t.slice(0, 0, 3).slice(1, 0, 3);
+                        auto t = w2c_t.slice(0, 0, 3).slice(1, 3);
+                        auto cam_pos = -torch::matmul(R.transpose(0, 1), t.squeeze());
+                        auto pos_data = cam_pos.accessor<float, 1>();
+                        std::cout << "Camera " << i << " COLMAP pos: ("
+                                  << pos_data[0] << ", " << pos_data[1] << ", " << pos_data[2] << ")" << std::endl;
+                        std::cout << "Camera " << i << " OpenGL pos: ("
+                                  << pos_data[0] << ", " << -pos_data[1] << ", " << -pos_data[2] << ")" << std::endl;
+                    }
+                }
+            }
+            debug_printed = true;
+        }
+
         for (size_t i = 0; i < cameras_.size(); ++i) {
             if ((is_test_camera_[i] && show_test_) || (!is_test_camera_[i] && show_train_)) {
                 visible_count++;
@@ -261,16 +364,20 @@ namespace gs {
         }
 
         if (visible_count == 0) {
-            std::cout << "No visible cameras to render" << std::endl;
             return;
         }
 
         // Enable depth test and disable face culling for lines
         glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_LEQUAL);
         glDisable(GL_CULL_FACE);
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        glLineWidth(2.0f);
+
+        // Enable line smoothing for nicer appearance
+        glEnable(GL_LINE_SMOOTH);
+        glHint(GL_LINE_SMOOTH_HINT, GL_NICEST);
+        glLineWidth(2.5f);
 
         // Bind shader and set uniforms
         frustum_shader_->bind();
@@ -278,11 +385,14 @@ namespace gs {
         glm::mat4 view = viewport.getViewMatrix();
         glm::mat4 projection = viewport.getProjectionMatrix();
         glm::mat4 viewProj = projection * view;
+        glm::vec3 viewPos = viewport.getCameraPosition();
 
         frustum_shader_->set_uniform("viewProj", viewProj);
         frustum_shader_->set_uniform("frustumScale", frustum_scale_);
         frustum_shader_->set_uniform("highlightIndex", highlight_index);
         frustum_shader_->set_uniform("highlightColor", highlight_color_);
+        frustum_shader_->set_uniform("viewPos", viewPos);
+        frustum_shader_->set_uniform("enableShading", true);
 
         // Bind VAO and draw instances
         glBindVertexArray(vao_);
@@ -300,8 +410,9 @@ namespace gs {
         glBindVertexArray(0);
         frustum_shader_->unbind();
 
-        // Restore line width
+        // Restore line width and disable line smoothing
         glLineWidth(1.0f);
+        glDisable(GL_LINE_SMOOTH);
     }
 
 } // namespace gs
