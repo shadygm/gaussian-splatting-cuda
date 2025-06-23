@@ -1,14 +1,9 @@
 #pragma once
 
-// clang-format off
-// CRITICAL: GLAD must be included before GLFW to avoid OpenGL header conflicts
-#include <glad/glad.h>
-#include <GLFW/glfw3.h>
-// clang-format on
-
+#include "visualizer/gl_headers.hpp"
 #include <fstream>
-#include <glm/glm.hpp>          // Add this include
-#include <glm/gtc/type_ptr.hpp> // For glm::value_ptr
+#include <glm/glm.hpp>
+#include <glm/gtc/type_ptr.hpp>
 #include <iostream>
 #include <map>
 #include <sstream>

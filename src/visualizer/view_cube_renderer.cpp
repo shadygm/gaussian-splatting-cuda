@@ -1,4 +1,5 @@
 #include "visualizer/view_cube_renderer.hpp"
+#include "visualizer/gl_headers.hpp"
 #include <cstring>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>

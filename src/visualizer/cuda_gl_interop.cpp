@@ -2,13 +2,9 @@
 
 #ifdef CUDA_GL_INTEROP_ENABLED
 
-// clang-format off
-// CRITICAL: GLAD must be included before GLFW to avoid OpenGL header conflicts
-#include <glad/glad.h>
-#include <GLFW/glfw3.h>
-// clang-format on
+#include "visualizer/gl_headers.hpp" // Use central GL headers
 
-// Now include CUDA GL interop (after GLAD)
+// Now include CUDA GL interop (after GL headers)
 #include <cuda_gl_interop.h>
 
 #include "visualizer/cuda_gl_interop.hpp"

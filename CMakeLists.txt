@@ -199,6 +199,11 @@ set(VISUALIZER_SOURCES
         src/visualizer/infinite_grid_renderer.cpp
         src/visualizer/view_cube_renderer.cpp
         src/visualizer/shader_manager.cpp
+        src/visualizer/gui/gui_manager.cpp
+        src/visualizer/gui/training_control_panel.cpp
+        src/visualizer/gui/render_settings_panel.cpp
+        src/visualizer/gui/camera_control_panel.cpp
+        src/visualizer/gui/visualization_panel.cpp
 )
 
 # Add CUDA interop source only if available
@@ -212,6 +217,7 @@ target_include_directories(gaussian_visualizer
         PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${CMAKE_CURRENT_BINARY_DIR}/include  # For generated config.h
+        ${CMAKE_CURRENT_SOURCE_DIR}/gsplat
         ${CUDAToolkit_INCLUDE_DIRS}
         ${OPENGL_INCLUDE_DIRS}
 )
@@ -224,6 +230,8 @@ target_link_libraries(gaussian_visualizer
         glad
         glfw
         glm
+        imgui
+        gsplat_backend
 )
 
 # =============================================================================

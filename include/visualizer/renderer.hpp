@@ -2,6 +2,7 @@
 
 #include "config.h"
 #include "visualizer/framebuffer.hpp"
+#include "visualizer/gl_headers.hpp"
 #include "visualizer/shader.hpp"
 #include "visualizer/viewport.hpp"
 

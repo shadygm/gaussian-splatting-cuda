@@ -22,7 +22,6 @@ namespace gs {
     }
 
     bool ViewerDetail::init() {
-
         if (!glfwInit()) {
             std::cerr << "Failed to initialize GLFW!" << std::endl;
             return false;
@@ -68,37 +67,6 @@ namespace gs {
         glBlendEquation(GL_FUNC_ADD);
         glEnable(GL_PROGRAM_POINT_SIZE);
 
-        // Setup Dear ImGui context
-        IMGUI_CHECKVERSION();
-        ImGui::CreateContext();
-        ImGuiIO& io = ImGui::GetIO();
-        io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-        io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
-        io.ConfigWindowsMoveFromTitleBarOnly = true;
-        ImGui::StyleColorsLight();
-
-        // Setup Platform/Renderer backends
-        const char* glsl_version = "#version 430";
-        ImGui_ImplGlfw_InitForOpenGL(window_, true);
-        ImGui_ImplOpenGL3_Init(glsl_version);
-
-        // Set Fonts
-        std::string font_path = std::string(PROJECT_ROOT_PATH) +
-                                "/include/visualizer/assets/JetBrainsMono-Regular.ttf";
-        io.Fonts->AddFontFromFileTTF(font_path.c_str(), 14.0f);
-
-        // Set Windows option
-        window_flags |= ImGuiWindowFlags_NoScrollbar;
-        window_flags |= ImGuiWindowFlags_NoResize;
-
-        ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 2.0f);
-
-        ImGuiStyle& style = ImGui::GetStyle();
-        style.WindowTitleAlign = ImVec2(0.5f, 0.5f);
-        style.WindowPadding = ImVec2(6.0f, 6.0f);
-        style.WindowRounding = 6.0f;
-        style.WindowBorderSize = 0.0f;
-
         return true;
     }
 
@@ -109,16 +77,6 @@ namespace gs {
         viewport_.windowSize = glm::ivec2(winW, winH);
         viewport_.frameBufferSize = glm::ivec2(fbW, fbH);
         glViewport(0, 0, fbW, fbH);
-    }
-
-    float ViewerDetail::getGPUUsage() {
-        size_t free_byte, total_byte;
-        cudaDeviceSynchronize();
-        cudaMemGetInfo(&free_byte, &total_byte);
-        size_t used_byte = total_byte - free_byte;
-        float gpuUsage = used_byte / (float)total_byte * 100;
-
-        return gpuUsage;
     }
 
     void ViewerDetail::setFrameRate(const int fps) {
@@ -136,14 +94,10 @@ namespace gs {
     }
 
     void ViewerDetail::mouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
-        // First check ImGui
-        ImGuiIO& io = ImGui::GetIO();
-        if (io.WantCaptureMouse) {
+        // First check GUI
+        if (detail_->gui_manager_ && detail_->gui_manager_->isAnyWindowActive()) {
             return;
         }
-
-        if (detail_->any_window_active)
-            return;
 
         if (action == GLFW_PRESS) {
             double xpos, ypos;
@@ -186,14 +140,10 @@ namespace gs {
     }
 
     void ViewerDetail::cursorPosCallback(GLFWwindow* window, double x, double y) {
-        // Check ImGui
-        ImGuiIO& io = ImGui::GetIO();
-        if (io.WantCaptureMouse) {
+        // Check GUI
+        if (detail_->gui_manager_ && detail_->gui_manager_->isAnyWindowActive()) {
             return;
         }
-
-        if (detail_->any_window_active)
-            return;
 
         // Update current mouse position
         glm::vec2 currentPos(x, y);
@@ -207,14 +157,10 @@ namespace gs {
     }
 
     void ViewerDetail::scrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
-        // Check ImGui
-        ImGuiIO& io = ImGui::GetIO();
-        if (io.WantCaptureMouse) {
+        // Check GUI
+        if (detail_->gui_manager_ && detail_->gui_manager_->isAnyWindowActive()) {
             return;
         }
-
-        if (detail_->any_window_active)
-            return;
 
         float delta = static_cast<float>(yoffset);
         if (std::abs(delta) < 1.0e-2f)
@@ -224,20 +170,15 @@ namespace gs {
     }
 
     void ViewerDetail::keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods) {
-        // Check ImGui
-        ImGuiIO& io = ImGui::GetIO();
-        if (io.WantCaptureKeyboard) {
+        // Check GUI
+        if (detail_->gui_manager_ && detail_->gui_manager_->isAnyWindowActive()) {
             return;
         }
 
         if (action == GLFW_PRESS || action == GLFW_REPEAT) {
             switch (key) {
             case GLFW_KEY_G:
-                if (detail_->show_grid_) {
-                    detail_->show_grid_ = false;
-                } else {
-                    detail_->show_grid_ = true;
-                }
+                detail_->show_grid_ = !detail_->show_grid_;
                 break;
             case GLFW_KEY_F:
                 // Focus on world origin
@@ -255,7 +196,6 @@ namespace gs {
     }
 
     void ViewerDetail::run() {
-
         if (!init()) {
             std::cerr << "Viewer initialization failed!" << std::endl;
             return;
@@ -268,6 +208,13 @@ namespace gs {
             shader_manager_ = std::make_unique<ShaderManager>(shader_path);
         } catch (const std::exception& e) {
             std::cerr << "Failed to initialize shader manager: " << e.what() << std::endl;
+            return;
+        }
+
+        // Initialize GUI manager
+        gui_manager_ = std::make_unique<GUIManager>();
+        if (!gui_manager_->init(window_)) {
+            std::cerr << "Failed to initialize GUI manager" << std::endl;
             return;
         }
 
@@ -306,6 +253,13 @@ namespace gs {
             view_cube_renderer_.reset();
         }
 
+        // NOW setup GUI panels if this is a GSViewer - after GUI manager is initialized
+        if (auto* gs_viewer = dynamic_cast<GSViewer*>(this)) {
+            if (gs_viewer->hasTrainer()) {
+                gs_viewer->setupGUIPanels();
+            }
+        }
+
         while (!glfwWindowShouldClose(window_)) {
             controlFrameRate();
             updateWindowSize();
@@ -320,13 +274,14 @@ namespace gs {
         }
 
         // Cleanup
-        ImGui_ImplOpenGL3_Shutdown();
-        ImGui_ImplGlfw_Shutdown();
-        ImGui::DestroyContext();
-
+        gui_manager_->shutdown();
         glfwDestroyWindow(window_);
         glfwTerminate();
     }
+
+    // ============================================================================
+    // GSViewer Implementation
+    // ============================================================================
 
     GSViewer::GSViewer(std::string title, int width, int height)
         : ViewerDetail(title, width, height),
@@ -360,6 +315,30 @@ namespace gs {
 
     void GSViewer::setTrainer(Trainer* trainer) {
         trainer_ = trainer;
+
+        // Try to setup panels if GUI manager exists
+        if (gui_manager_) {
+            setupGUIPanels();
+        }
+        // Otherwise, panels will be set up later in run() or draw()
+    }
+
+    void GSViewer::setupGUIPanels() {
+        // Create panels
+        auto training_panel = std::make_shared<TrainingControlPanel>(trainer_, info_);
+        auto render_panel = std::make_shared<RenderSettingsPanel>(config_);
+        auto camera_panel = std::make_shared<CameraControlPanel>(&viewport_);
+        auto viz_panel = std::make_shared<VisualizationPanel>(
+            grid_renderer_.get(),
+            view_cube_renderer_.get(),
+            &show_grid_,
+            &show_view_cube_);
+
+        // Add panels to manager
+        gui_manager_->addPanel(training_panel);
+        gui_manager_->addPanel(render_panel);
+        gui_manager_->addPanel(camera_panel);
+        gui_manager_->addPanel(viz_panel);
     }
 
     void GSViewer::drawFrame() {
@@ -368,7 +347,7 @@ namespace gs {
             return;
         }
 
-        // Update scene bounds if needed (but don't auto-focus on them)
+        // Update scene bounds if needed
         static bool bounds_initialized = false;
         if (!bounds_initialized && trainer_->get_strategy().get_model().size() > 0) {
             // Get approximate scene bounds from splat data
@@ -410,6 +389,14 @@ namespace gs {
                 viewport_.camera.minZoom = scene_radius_ * 0.01f;
                 viewport_.camera.maxZoom = scene_radius_ * 100.0f;
 
+                // Update camera panel with scene bounds
+                auto camera_panel = std::dynamic_pointer_cast<CameraControlPanel>(
+                    gui_manager_->getPanel("Camera Controls") // Note: use "Camera Controls" not "Camera Control"
+                );
+                if (camera_panel) {
+                    camera_panel->setSceneBounds(scene_center_, scene_radius_);
+                }
+
                 bounds_initialized = true;
 
                 // Don't auto-focus! Let user control camera
@@ -421,21 +408,10 @@ namespace gs {
         glm::mat4 view_opengl = viewport_.getViewMatrix();
 
         // The OpenGL view matrix transforms from world to camera space
-        // Extract camera position in world space
         glm::mat4 view_inv = glm::inverse(view_opengl);
         glm::vec3 cam_pos_world = glm::vec3(view_inv[3]);
 
-        // Now we need to build the viewmat in the format expected by the CUDA kernel
-        // The kernel expects a row-major 4x4 matrix where:
-        // - The upper-left 3x3 is the rotation matrix R (world-to-camera)
-        // - The first 3 elements of the last column are the translation t
-        // - The transformation is: p_camera = R * p_world + t
-
-        // Since COLMAP uses a different coordinate system than OpenGL:
-        // OpenGL: Y-up, camera looks down -Z
-        // COLMAP: Y-down, camera looks down +Z
-
-        // We need to apply a 180-degree rotation around X to convert from OpenGL to COLMAP
+        // Convert from OpenGL to COLMAP coordinate system
         glm::mat4 opengl_to_colmap = glm::mat4(1.0f);
         opengl_to_colmap[1][1] = -1.0f; // Flip Y
         opengl_to_colmap[2][2] = -1.0f; // Flip Z
@@ -447,10 +423,10 @@ namespace gs {
         glm::mat3 R_w2c = glm::mat3(view_colmap);
         glm::vec3 t_w2c = glm::vec3(view_colmap[3]);
 
-        // Now create the viewmat in row-major format as expected by the kernel
+        // Create viewmat tensor
         torch::Tensor viewmat_tensor = torch::zeros({4, 4}, torch::kFloat32);
 
-        // Fill in the rotation part (remember, we're storing in row-major)
+        // Fill in the rotation part
         viewmat_tensor[0][0] = R_w2c[0][0];
         viewmat_tensor[0][1] = R_w2c[0][1];
         viewmat_tensor[0][2] = R_w2c[0][2];
@@ -472,12 +448,8 @@ namespace gs {
         viewmat_tensor[3][2] = 0.0f;
         viewmat_tensor[3][3] = 1.0f;
 
-        // Extract R and t for the Camera constructor (which uses a different format)
-        // The Camera constructor expects R and T such that world_to_view constructs the proper matrix
-        // Looking at world_to_view in camera.cpp, it transposes R and creates a specific format
-
-        // For now, let's just extract what we need
-        torch::Tensor R_tensor = torch::tensor({R_w2c[0][0], R_w2c[1][0], R_w2c[2][0], // Note: transposed for row-major
+        // Extract R and t for the Camera constructor
+        torch::Tensor R_tensor = torch::tensor({R_w2c[0][0], R_w2c[1][0], R_w2c[2][0],
                                                 R_w2c[0][1], R_w2c[1][1], R_w2c[2][1],
                                                 R_w2c[0][2], R_w2c[1][2], R_w2c[2][2]},
                                                torch::TensorOptions().dtype(torch::kFloat32))
@@ -571,13 +543,6 @@ namespace gs {
     }
 
     void GSViewer::drawGrid() {
-        static bool first_call = true;
-        if (first_call) {
-            std::cout << "First drawGrid call - grid_renderer_: " << (grid_renderer_ ? "valid" : "null")
-                      << ", show_grid_: " << show_grid_ << std::endl;
-            first_call = false;
-        }
-
         if (grid_renderer_ && show_grid_) {
             // Dynamically adjust fade distance based on scene size
             if (scene_bounds_valid_) {
@@ -612,273 +577,12 @@ namespace gs {
         }
     }
 
-    void GSViewer::configuration() {
-        ImGui_ImplOpenGL3_NewFrame();
-        ImGui_ImplGlfw_NewFrame();
-        ImGui::NewFrame();
-
-        // Update the any_window_active flag based on ImGui state
-        any_window_active = ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow) ||
-                            ImGui::IsAnyItemActive() ||
-                            ImGui::IsAnyItemHovered();
-
-        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.5f, 0.5f, 0.5f, 0.8f));
-        ImGui::Begin("Rendering Setting", nullptr, window_flags);
-        ImGui::SetWindowSize(ImVec2(300, 0));
-
-        // Check if trainer is set
-        if (!trainer_) {
-            ImGui::Text("Waiting for trainer initialization...");
-            ImGui::End();
-            ImGui::PopStyleColor();
-            return;
-        }
-
-        // Training control section
-        ImGui::Separator();
-        ImGui::Text("Training Control");
-        ImGui::Separator();
-
-        bool is_training = trainer_->is_running();
-        bool is_paused = trainer_->is_paused();
-        bool is_complete = trainer_->is_training_complete();
-        bool has_stopped = trainer_->has_stopped();
-
-        // Show appropriate controls based on state
-        if (!training_started_ && !is_training) {
-            // Initial state - show start button
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.2f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.7f, 0.3f, 1.0f));
-            if (ImGui::Button("Start Training", ImVec2(-1, 0))) {
-                manual_start_triggered_ = true;
-                training_started_ = true;
-            }
-            ImGui::PopStyleColor(2);
-        } else if (is_complete || has_stopped) {
-            // Training finished - show status
-            ImGui::TextColored(ImVec4(0.2f, 0.8f, 0.2f, 1.0f),
-                               has_stopped ? "Training Stopped!" : "Training Complete!");
-        } else {
-            // Training in progress - show control buttons
-
-            // Pause/Resume button
-            if (is_paused) {
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.2f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.7f, 0.3f, 1.0f));
-                if (ImGui::Button("Resume", ImVec2(-1, 0))) {
-                    trainer_->request_resume();
-                }
-                ImGui::PopStyleColor(2);
-
-                // When paused, show stop button too
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.2f, 0.2f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.8f, 0.3f, 0.3f, 1.0f));
-                if (ImGui::Button("Stop Permanently", ImVec2(-1, 0))) {
-                    trainer_->request_stop();
-                }
-                ImGui::PopStyleColor(2);
-            } else {
-                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.5f, 0.1f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.8f, 0.6f, 0.2f, 1.0f));
-                if (ImGui::Button("Pause", ImVec2(-1, 0))) {
-                    trainer_->request_pause();
-                }
-                ImGui::PopStyleColor(2);
-            }
-
-            // Save checkpoint button (always visible during training)
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.1f, 0.4f, 0.7f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.2f, 0.5f, 0.8f, 1.0f));
-            if (ImGui::Button("Save Checkpoint", ImVec2(-1, 0))) {
-                trainer_->request_save();
-                save_in_progress_ = true;
-                save_start_time_ = std::chrono::steady_clock::now();
-            }
-            ImGui::PopStyleColor(2);
-        }
-
-        // Show save progress feedback
-        if (save_in_progress_) {
-            auto now = std::chrono::steady_clock::now();
-            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - save_start_time_).count();
-            if (elapsed < 2000) {
-                ImGui::TextColored(ImVec4(0.2f, 0.8f, 0.2f, 1.0f), "Checkpoint saved!");
-            } else {
-                save_in_progress_ = false;
-            }
-        }
-
-        // Status display
-        ImGui::Separator();
-        int current_iter = trainer_->get_current_iteration();
-        float current_loss = trainer_->get_current_loss();
-        ImGui::Text("Status: %s", is_complete ? "Complete" : (is_paused ? "Paused" : (is_training ? "Training" : "Ready")));
-        ImGui::Text("Iteration: %d", current_iter);
-        ImGui::Text("Loss: %.6f", current_loss);
-
-        // Display render mode
-#ifdef CUDA_GL_INTEROP_ENABLED
-        ImGui::Text("Render Mode: GPU Direct (Interop)");
-#else
-        ImGui::Text("Render Mode: CPU Copy");
-#endif
-
-        // Handle the start trigger
-        if (notifier_ && manual_start_triggered_) {
-            std::lock_guard<std::mutex> lock(notifier_->mtx);
-            notifier_->ready = true;
-            notifier_->cv.notify_one();
-            manual_start_triggered_ = false;
-        }
-
-        ImGui::Separator();
-        ImGui::Text("Rendering Settings");
-        ImGui::Separator();
-
-        ImGui::SetNextItemWidth(200);
-        ImGui::SliderFloat("##scale_slider", &config_->scaling_modifier, 0.01f, 3.0f, "Scale=%.2f");
-        ImGui::SameLine();
-        if (ImGui::Button("Reset##scale", ImVec2(ImGui::GetContentRegionAvail().x, 0.0f))) {
-            config_->scaling_modifier = 1.0f;
-        }
-
-        ImGui::SetNextItemWidth(200);
-        ImGui::SliderFloat("##fov_slider", &config_->fov, 45.0f, 120.0f, "FoV=%.2f");
-        ImGui::SameLine();
-        if (ImGui::Button("Reset##fov", ImVec2(ImGui::GetContentRegionAvail().x, 0.0f))) {
-            config_->fov = 75.0f;
-        }
-
-        // Camera Info and Controls
-        ImGui::Separator();
-        ImGui::Text("Camera Controls");
-        ImGui::Separator();
-
-        ImGui::Text("Left Mouse: Orbit");
-        ImGui::Text("Right Mouse: Pan");
-        ImGui::Text("Scroll: Zoom");
-        ImGui::Text("G: Toggle Grid");
-        ImGui::Text("F: Focus World Origin");
-        ImGui::Text("H: Home View (Look Down)");
-
-        if (ImGui::Button("Reset Camera", ImVec2(-1, 0))) {
-            viewport_.reset();
-        }
-
-        // Camera parameters
-        ImGui::Text("Distance: %.2f", viewport_.distance);
-        ImGui::Text("Azimuth: %.1f°", viewport_.azimuth);
-        ImGui::Text("Elevation: %.1f°", viewport_.elevation);
-        ImGui::Text("Target: %.2f, %.2f, %.2f",
-                    viewport_.target.x,
-                    viewport_.target.y,
-                    viewport_.target.z);
-
-        // Scene info (if available)
-        if (scene_bounds_valid_) {
-            ImGui::Separator();
-            ImGui::Text("Scene Info:");
-            ImGui::Text("Center: %.2f, %.2f, %.2f", scene_center_.x, scene_center_.y, scene_center_.z);
-            ImGui::Text("Radius: %.2f", scene_radius_);
-        }
-
-        // Quick view buttons
-        ImGui::Text("Quick Views:");
-        if (ImGui::Button("Front", ImVec2(60, 0)))
-            viewport_.alignToAxis('z', true);
-        ImGui::SameLine();
-        if (ImGui::Button("Back", ImVec2(60, 0)))
-            viewport_.alignToAxis('z', false);
-        ImGui::SameLine();
-        if (ImGui::Button("Left", ImVec2(60, 0)))
-            viewport_.alignToAxis('x', false);
-        ImGui::SameLine();
-        if (ImGui::Button("Right", ImVec2(60, 0)))
-            viewport_.alignToAxis('x', true);
-
-        if (ImGui::Button("Top", ImVec2(60, 0)))
-            viewport_.alignToAxis('y', true);
-        ImGui::SameLine();
-        if (ImGui::Button("Bottom", ImVec2(60, 0)))
-            viewport_.alignToAxis('y', false);
-
-        // Grid Settings Section
-        ImGui::Separator();
-        ImGui::Text("Grid Settings");
-        ImGui::Separator();
-
-        ImGui::Checkbox("Show Grid", &show_grid_);
-
-        if (show_grid_ && grid_renderer_) {
-            static float grid_opacity = 1.0f;
-            if (ImGui::SliderFloat("Grid Opacity", &grid_opacity, 0.0f, 1.0f)) {
-                grid_renderer_->setOpacity(grid_opacity);
-            }
-        }
-
-        // View Cube Settings Section
-        ImGui::Separator();
-        ImGui::Text("View Cube");
-        ImGui::Separator();
-
-        ImGui::Checkbox("Show View Cube", &show_view_cube_);
-
-        int current_iter2;
-        int total_iter;
-        int num_splats;
-        std::vector<float> loss_data;
-        {
-            std::lock_guard<std::mutex> lock(info_->mtx);
-            current_iter2 = info_->curr_iterations_;
-            total_iter = info_->total_iterations_;
-            num_splats = info_->num_splats_;
-            loss_data.assign(info_->loss_buffer_.begin(), info_->loss_buffer_.end());
-        }
-
-        float fraction = total_iter > 0 ? float(current_iter2) / float(total_iter) : 0.0f;
-        char overlay_text[64];
-        std::snprintf(overlay_text, sizeof(overlay_text), "%d / %d", current_iter2, total_iter);
-        ImGui::ProgressBar(fraction, ImVec2(-1, 20), overlay_text);
-
-        if (loss_data.size() > 0) {
-            auto [min_it, max_it] = std::minmax_element(loss_data.begin(), loss_data.end());
-            float min_val = *min_it, max_val = *max_it;
-
-            if (min_val == max_val) {
-                min_val -= 1.0f;
-                max_val += 1.0f;
-            } else {
-                float margin = (max_val - min_val) * 0.05f;
-                min_val -= margin;
-                max_val += margin;
-            }
-
-            char loss_label[64];
-            std::snprintf(loss_label, sizeof(loss_label), "Loss: %.4f", loss_data.back());
-
-            ImGui::PlotLines(
-                "##Loss",
-                loss_data.data(),
-                static_cast<int>(loss_data.size()),
-                0,
-                loss_label,
-                min_val,
-                max_val,
-                ImVec2(-1, 50));
-        }
-
-        float gpuUsage = getGPUUsage();
-        char gpuText[64];
-        std::snprintf(gpuText, sizeof(gpuText), "GPU Usage: %.1f%%", gpuUsage);
-        ImGui::ProgressBar(gpuUsage / 100.0f, ImVec2(-1, 20), gpuText);
-
-        ImGui::Text("num Splats: %d", num_splats);
-
-        ImGui::End();
-        ImGui::PopStyleColor();
-    }
-
     void GSViewer::draw() {
+        // Check if we need to set up panels (deferred from setTrainer)
+        if (trainer_ && gui_manager_ && gui_manager_->getPanelCount() == 0) {
+            setupGUIPanels();
+        }
+
         // Clear with a dark background
         glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -905,12 +609,21 @@ namespace gs {
         drawViewCube();
         glEnable(GL_DEPTH_TEST);
 
-        // 4. ImGui UI (renders on top of everything)
-        configuration();
+        // 4. GUI rendering
+        gui_manager_->beginFrame();
+        gui_manager_->render();
 
-        // Render all ImGui elements
-        ImGui::Render();
-        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+        // Handle training start trigger
+        auto training_panel = std::dynamic_pointer_cast<TrainingControlPanel>(
+            gui_manager_->getPanel("Training Control"));
+        if (training_panel && training_panel->shouldStartTraining() && notifier_) {
+            std::lock_guard<std::mutex> lock(notifier_->mtx);
+            notifier_->ready = true;
+            notifier_->cv.notify_one();
+            training_panel->resetStartTrigger();
+        }
+
+        gui_manager_->endFrame();
     }
 
 } // namespace gs

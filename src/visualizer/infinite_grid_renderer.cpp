@@ -1,5 +1,5 @@
 #include "visualizer/infinite_grid_renderer.hpp"
-#include <glm/gtc/matrix_transform.hpp>
+#include "visualizer/gl_headers.hpp"
 #include <iostream>
 #include <random>
 
