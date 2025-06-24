@@ -207,7 +207,6 @@ set(VISUALIZER_SOURCES
         src/visualizer/gui/dataset_viewer_panel.cpp
         src/visualizer/scene_renderer.cpp
         src/visualizer/input_handler.cpp
-        src/visualizer/viewer_base.cpp
         src/visualizer/gs_viewer.cpp
 )
 

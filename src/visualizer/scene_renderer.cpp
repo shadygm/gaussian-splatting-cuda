@@ -36,7 +36,7 @@ namespace gs {
             std::cout << "Grid renderer initialized successfully" << std::endl;
         }
 
-        // Load screen quad shader
+        // Load screen quad shader through shader manager
         try {
             shader_manager_->loadShader("screen_quad", "screen_quad.vert", "screen_quad.frag", true);
         } catch (const std::exception& e) {

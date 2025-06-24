@@ -127,7 +127,7 @@ namespace gs {
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, face_indices.size() * sizeof(unsigned int),
                      face_indices.data(), GL_STATIC_DRAW);
 
-        // Upload edge indices
+        // Upload edge indices (don't bind to VAO yet)
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, edge_ebo_);
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, edge_indices.size() * sizeof(unsigned int),
                      edge_indices.data(), GL_STATIC_DRAW);
@@ -145,9 +145,52 @@ namespace gs {
 
         std::cout << "Setting " << cameras.size() << " cameras" << std::endl;
 
-        // Don't calculate scene bounds here - cameras might not be initialized yet
-        // Just set a default scale
-        frustum_scale_ = 0.1f;
+        // Calculate scene bounds from camera positions
+        if (!cameras.empty()) {
+            glm::vec3 min_pos(std::numeric_limits<float>::max());
+            glm::vec3 max_pos(std::numeric_limits<float>::lowest());
+            int valid_cameras = 0;
+
+            for (const auto& cam : cameras) {
+                try {
+                    auto w2c_tensor = cam->world_view_transform();
+                    if (!w2c_tensor.defined() || w2c_tensor.numel() == 0) {
+                        continue;
+                    }
+
+                    w2c_tensor = w2c_tensor.to(torch::kCPU).squeeze(0);
+                    torch::Tensor R = w2c_tensor.slice(0, 0, 3).slice(1, 0, 3);
+                    torch::Tensor t = w2c_tensor.slice(0, 0, 3).slice(1, 3).squeeze();
+
+                    // Camera position in world space
+                    auto R_t = R.transpose(0, 1);
+                    torch::Tensor cam_pos = -torch::matmul(R_t, t);
+
+                    auto pos_data = cam_pos.accessor<float, 1>();
+                    glm::vec3 pos(pos_data[0], -pos_data[1], -pos_data[2]);
+
+                    min_pos = glm::min(min_pos, pos);
+                    max_pos = glm::max(max_pos, pos);
+                    valid_cameras++;
+                } catch (...) {
+                    // Skip invalid cameras
+                }
+            }
+
+            if (valid_cameras > 0) {
+                scene_center_ = (min_pos + max_pos) * 0.5f;
+                scene_radius_ = glm::length(max_pos - min_pos) * 0.5f;
+
+                // Calculate appropriate frustum scale based on scene size
+                frustum_scale_ = scene_radius_ * 0.05f; // 5% of scene radius
+                frustum_scale_ = glm::clamp(frustum_scale_, 0.01f, 1.0f);
+
+                std::cout << "Scene bounds calculated - Center: ("
+                          << scene_center_.x << ", " << scene_center_.y << ", " << scene_center_.z
+                          << "), Radius: " << scene_radius_
+                          << ", Frustum scale: " << frustum_scale_ << std::endl;
+            }
+        }
 
         updateInstanceBuffer();
     }
@@ -183,7 +226,6 @@ namespace gs {
                 w2c_tensor = w2c_tensor.to(torch::kCPU).squeeze(0);
 
                 // Extract R and t from the world-to-camera matrix
-                // The matrix is [R t; 0 1] where R is the rotation matrix
                 torch::Tensor R = w2c_tensor.slice(0, 0, 3).slice(1, 0, 3);
                 torch::Tensor t = w2c_tensor.slice(0, 0, 3).slice(1, 3);
 
@@ -301,9 +343,6 @@ namespace gs {
         // Use state guard for automatic restoration
         OpenGLStateManager::StateGuard guard(getGLStateManager());
 
-        // First pass: Draw solid faces
-        getGLStateManager().setForSolidFaces();
-
         // Bind shader
         frustum_shader_->bind();
 
@@ -317,19 +356,19 @@ namespace gs {
         frustum_shader_->set_uniform("highlightIndex", highlight_index);
         frustum_shader_->set_uniform("highlightColor", highlight_color_);
         frustum_shader_->set_uniform("viewPos", viewPos);
-        frustum_shader_->set_uniform("enableShading", true);
 
         // Bind VAO
         glBindVertexArray(vao_);
 
-        // Draw solid faces
+        // First pass: Draw solid faces
+        getGLStateManager().setForSolidFaces();
+        frustum_shader_->set_uniform("enableShading", true);
+
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, face_ebo_);
         glDrawElementsInstanced(GL_TRIANGLES, num_face_indices_, GL_UNSIGNED_INT, 0, visible_count);
 
         // Second pass: Draw wireframe edges on top
         getGLStateManager().setForWireframe();
-
-        // Make wireframe darker for better contrast
         frustum_shader_->set_uniform("enableShading", false);
 
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, edge_ebo_);
