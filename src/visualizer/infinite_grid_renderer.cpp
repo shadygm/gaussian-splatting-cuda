@@ -1,5 +1,6 @@
 #include "visualizer/infinite_grid_renderer.hpp"
 #include "visualizer/gl_headers.hpp"
+#include "visualizer/opengl_state_manager.hpp"
 #include <iostream>
 #include <random>
 
@@ -143,21 +144,11 @@ namespace gs {
         // Camera position in world space
         glm::vec3 view_position = viewport.getCameraPosition();
 
-        // Save current OpenGL state
-        GLboolean blend_enabled = glIsEnabled(GL_BLEND);
-        GLboolean depth_test_enabled = glIsEnabled(GL_DEPTH_TEST);
-        GLboolean depth_mask;
-        glGetBooleanv(GL_DEPTH_WRITEMASK, &depth_mask);
-        GLint blend_src, blend_dst;
-        glGetIntegerv(GL_BLEND_SRC_ALPHA, &blend_src);
-        glGetIntegerv(GL_BLEND_DST_ALPHA, &blend_dst);
+        // Use state guard for automatic restoration
+        OpenGLStateManager::StateGuard guard(getGLStateManager());
 
         // Set our required state
-        glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        glEnable(GL_DEPTH_TEST);
-        glDepthFunc(GL_LESS);
-        glDepthMask(GL_TRUE);
+        getGLStateManager().setForGridRendering();
 
         // Bind shader and set uniforms
         grid_shader_->bind();
@@ -193,12 +184,6 @@ namespace gs {
 
         grid_shader_->unbind();
 
-        // Restore previous OpenGL state
-        if (!blend_enabled)
-            glDisable(GL_BLEND);
-        if (!depth_test_enabled)
-            glDisable(GL_DEPTH_TEST);
-        glDepthMask(depth_mask);
-        glBlendFunc(blend_src, blend_dst);
+        // State automatically restored by guard destructor
     }
 } // namespace gs

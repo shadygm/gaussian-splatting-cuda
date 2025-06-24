@@ -1,5 +1,6 @@
 #include "visualizer/view_cube_renderer.hpp"
 #include "visualizer/gl_headers.hpp"
+#include "visualizer/opengl_state_manager.hpp"
 #include <cstring>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -189,24 +190,14 @@ namespace gs {
         if (!initialized_)
             return;
 
-        // Save current OpenGL state
-        GLint viewport_dims[4];
-        glGetIntegerv(GL_VIEWPORT, viewport_dims);
-
-        GLboolean depth_test = glIsEnabled(GL_DEPTH_TEST);
-        GLboolean blend = glIsEnabled(GL_BLEND);
-        GLboolean cull_face = glIsEnabled(GL_CULL_FACE);
+        // Use state guard for automatic restoration
+        OpenGLStateManager::StateGuard guard(getGLStateManager());
 
         // Set up viewport for cube rendering
         glViewport(x - size / 2, y - size / 2, size, size);
 
         // Enable required states
-        glEnable(GL_DEPTH_TEST);
-        glDepthFunc(GL_LEQUAL);
-        glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        glEnable(GL_CULL_FACE);
-        glCullFace(GL_BACK);
+        getGLStateManager().setForViewCube();
 
         // Clear depth in the cube area
         glScissor(x - size / 2, y - size / 2, size, size);
@@ -268,19 +259,7 @@ namespace gs {
         glBindVertexArray(0);
         axis_shader_->unbind();
 
-        // Restore OpenGL state
-        glViewport(viewport_dims[0], viewport_dims[1], viewport_dims[2], viewport_dims[3]);
-        glLineWidth(1.0f);
-
-        if (depth_test)
-            glEnable(GL_DEPTH_TEST);
-        else
-            glDisable(GL_DEPTH_TEST);
-
-        if (!blend)
-            glDisable(GL_BLEND);
-        if (!cull_face)
-            glDisable(GL_CULL_FACE);
+        // State automatically restored by guard destructor
     }
 
     int ViewCubeRenderer::hitTest(const Viewport& viewport, float screen_x, float screen_y,

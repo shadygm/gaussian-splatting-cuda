@@ -1,5 +1,6 @@
 #include "config.h" // Include generated config
 #include "visualizer/detail.hpp"
+#include "visualizer/opengl_state_manager.hpp"
 #include <chrono>
 #include <thread>
 
@@ -261,7 +262,7 @@ namespace gs {
             grid_plane_ = InfiniteGridRenderer::GridPlane::XZ;
         }
 
-        // Load screen quad shader through shader manager
+
         try {
             shader_manager_->loadShader("screen_quad", "screen_quad.vert", "screen_quad.frag", true);
         } catch (const std::exception& e) {
@@ -584,15 +585,14 @@ namespace gs {
                 RenderMode::RGB);
         }
 
+        // Use state guard for automatic restoration
+        OpenGLStateManager::StateGuard guard(getGLStateManager());
+
         // Clear depth buffer before rendering splats to ensure proper layering
         glClear(GL_DEPTH_BUFFER_BIT);
 
-        // Enable blending to composite splats over the grid
-        glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-        // Disable depth testing for the screen quad
-        glDisable(GL_DEPTH_TEST);
+        // Set state for splat rendering
+        getGLStateManager().setForSplatRendering();
 
 #ifdef CUDA_GL_INTEROP_ENABLED
         // Use interop for direct GPU transfer
@@ -632,12 +632,13 @@ namespace gs {
         auto quadShader = shader_manager_->getShader("screen_quad");
         screen_renderer_->render(quadShader, viewport_);
 
-        // Re-enable depth test for next frame
-        glEnable(GL_DEPTH_TEST);
+        // State automatically restored by guard destructor
     }
 
     void GSViewer::drawGrid() {
         if (grid_renderer_ && show_grid_) {
+            // State management is handled inside grid_renderer_->render()
+            
             // Dynamically adjust fade distance based on scene size
             if (scene_bounds_valid_) {
                 // Make grid visible up to 10x the scene radius
@@ -660,19 +661,21 @@ namespace gs {
 
     void GSViewer::drawViewCube() {
         if (view_cube_renderer_ && show_view_cube_) {
+            // State management is handled inside view_cube_renderer_->render()
+            
             // Position in top-right corner
             float margin = 20.0f;
             float size = 120.0f;
             float x = viewport_.windowSize.x - margin - size / 2;
             float y = viewport_.windowSize.y - margin - size / 2;
 
-            // View cube also uses the same viewport camera state
             view_cube_renderer_->render(viewport_, x, y, size);
         }
     }
 
     void GSViewer::drawCameras() {
         if (camera_renderer_ && dataset_panel_) {
+            // State management is handled inside camera_renderer_->render()
             int highlight_idx = dataset_panel_->getCurrentCameraIndex();
             camera_renderer_->render(viewport_, highlight_idx);
         }
@@ -688,9 +691,10 @@ namespace gs {
             return;
         }
 
+        // Use state guard for automatic restoration
+        OpenGLStateManager::StateGuard guard(getGLStateManager());
+
         // Simple overlay rendering in corner
-        // This is a simplified version - you might want to use screen_renderer_
-        // or create a dedicated overlay renderer
         glDisable(GL_DEPTH_TEST);
 
         // Draw semi-transparent overlay
@@ -705,7 +709,7 @@ namespace gs {
         // Here you would render the image using a quad
         // For now, this is a placeholder
 
-        glEnable(GL_DEPTH_TEST);
+        // State automatically restored by guard destructor
     }
 
     void GSViewer::draw() {
@@ -719,11 +723,6 @@ namespace gs {
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         // 1. Draw grid first with depth testing
-        glEnable(GL_DEPTH_TEST);
-        glDepthFunc(GL_LEQUAL);
-        glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
         drawGrid();
 
         // 2. Draw camera frustums
@@ -733,15 +732,11 @@ namespace gs {
         if (trainer_) {
             // Clear depth buffer so splats render on top of grid
             glClear(GL_DEPTH_BUFFER_BIT);
-            glDisable(GL_DEPTH_TEST);
             drawFrame();
-            glEnable(GL_DEPTH_TEST);
         }
 
         // 4. Draw view cube (renders on top of everything)
-        glDisable(GL_DEPTH_TEST);
         drawViewCube();
-        glEnable(GL_DEPTH_TEST);
 
         // 5. Draw image overlay if enabled
         drawImageOverlay();

@@ -1,6 +1,7 @@
 #include "visualizer/camera_frustum_renderer.hpp"
 #include "visualizer/gl_headers.hpp"
 #include "visualizer/viewport.hpp"
+#include "visualizer/opengl_state_manager.hpp"
 #include <filesystem>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -300,18 +301,11 @@ namespace gs {
             return;
         }
 
-        // Enable depth test for proper rendering
-        glEnable(GL_DEPTH_TEST);
-        glDepthFunc(GL_LESS);
-        glDepthMask(GL_TRUE);
+        // Use state guard for automatic restoration
+        OpenGLStateManager::StateGuard guard(getGLStateManager());
 
-        // Enable face culling for solid faces
-        glEnable(GL_CULL_FACE);
-        glCullFace(GL_BACK);
-        glFrontFace(GL_CCW);
-
-        // Disable blending for solid faces
-        glDisable(GL_BLEND);
+        // First pass: Draw solid faces
+        getGLStateManager().setForSolidFaces();
 
         // Bind shader
         frustum_shader_->bind();
@@ -331,15 +325,12 @@ namespace gs {
         // Bind VAO
         glBindVertexArray(vao_);
 
-        // First pass: Draw solid faces
+        // Draw solid faces
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, face_ebo_);
         glDrawElementsInstanced(GL_TRIANGLES, num_face_indices_, GL_UNSIGNED_INT, 0, visible_count);
 
         // Second pass: Draw wireframe edges on top
-        glDisable(GL_CULL_FACE);
-        glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        glLineWidth(3.0f);  // Thicker lines for more solid appearance
+        getGLStateManager().setForWireframe();
 
         // Make wireframe darker for better contrast
         frustum_shader_->set_uniform("enableShading", false);
@@ -350,10 +341,7 @@ namespace gs {
         glBindVertexArray(0);
         frustum_shader_->unbind();
 
-        // Restore OpenGL state
-        glLineWidth(1.0f);
-        glDisable(GL_BLEND);
-        glEnable(GL_CULL_FACE);
+        // State automatically restored by guard destructor
     }
 
 } // namespace gs
