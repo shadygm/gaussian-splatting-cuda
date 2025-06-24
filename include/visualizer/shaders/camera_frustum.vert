@@ -1,44 +1,36 @@
-#version 430 core
+#version 330 core
 
+// Vertex attributes
 layout(location = 0) in vec3 aPos;
 
-// Per-instance data
-layout(location = 1) in mat4 cameraToWorld;
-layout(location = 5) in vec3 instanceColor;
-layout(location = 6) in vec3 cameraParams; // fov_x, fov_y, aspect
+// Instance attributes
+layout(location = 1) in mat4 aInstanceMatrix;
+layout(location = 5) in vec3 aInstanceColor;
+layout(location = 6) in vec3 aFovAspect; // fov_x, fov_y, aspect
 
+// Uniforms
 uniform mat4 viewProj;
 uniform float frustumScale;
-uniform int currentIndex;
-uniform int highlightIndex;
-uniform vec3 highlightColor;
+uniform vec3 viewPos;
 
-out vec3 fragColor;
-out vec3 worldPos;
-out vec3 cameraCenter;
+// Outputs to fragment shader
+out vec3 FragPos;
+out vec3 Normal;
+out vec4 vertexColor;
 
 void main() {
-    vec3 pos = aPos;
+    // Apply instance transformation
+    vec4 worldPos = aInstanceMatrix * vec4(aPos, 1.0);
 
-    // Scale frustum based on FOV only for non-apex vertices
-    // The apex is at position (0,0,0) in our geometry
-    if (length(aPos) > 0.01) {  // Not the apex
-        pos.x *= tan(cameraParams.x * 0.5) * frustumScale;
-        pos.y *= tan(cameraParams.y * 0.5) * frustumScale;
-        pos.z *= frustumScale;
-    }
+    // Calculate normal (simplified - assuming uniform scaling)
+    Normal = mat3(aInstanceMatrix) * vec3(0.0, 0.0, 1.0); // Frustums face forward
 
-    // Transform from camera space to world space
-    vec4 worldPosition = cameraToWorld * vec4(pos, 1.0);
-    worldPos = worldPosition.xyz;
-    cameraCenter = cameraToWorld[3].xyz;
+    // Pass through color
+    vertexColor = vec4(aInstanceColor, 1.0);
 
-    gl_Position = viewProj * worldPosition;
+    // World position for lighting
+    FragPos = vec3(worldPos);
 
-    // Set color - check both current index and highlight index
-    if (currentIndex == highlightIndex && highlightIndex >= 0) {
-        fragColor = highlightColor;
-    } else {
-        fragColor = instanceColor;
-    }
+    // Final position
+    gl_Position = viewProj * worldPos;
 }

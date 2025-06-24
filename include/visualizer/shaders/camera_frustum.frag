@@ -1,31 +1,50 @@
-#version 430 core
+#version 330 core
 
-in vec3 fragColor;
-in vec3 worldPos;
-in vec3 cameraCenter;
+// Inputs from vertex shader
+in vec3 FragPos;
+in vec3 Normal;
+in vec4 vertexColor;
 
+// Output
 out vec4 FragColor;
 
+// Uniforms
 uniform vec3 viewPos;
-uniform bool enableShading = true;
+uniform bool enableShading;
+uniform int highlightIndex;
+uniform vec3 highlightColor;
 
 void main() {
-    vec3 color = fragColor;
+    vec4 finalColor = vertexColor;
 
     if (enableShading) {
-        // Simple distance-based fading for depth perception
-        float distanceFromCamera = length(cameraCenter - viewPos);
-        float fogFactor = 1.0 - smoothstep(5.0, 50.0, distanceFromCamera);
+        // Simple lighting
+        vec3 lightPos = viewPos + vec3(10.0, 10.0, 10.0);
+        vec3 norm = normalize(Normal);
+        vec3 lightDir = normalize(lightPos - FragPos);
 
-        // Add slight gradient from apex to base
-        float height = length(worldPos - cameraCenter);
-        float gradientFactor = 1.0 - height * 0.2;
+        // Ambient
+        float ambientStrength = 0.3;
+        vec3 ambient = ambientStrength * vec3(1.0);
 
-        color = color * gradientFactor * (0.3 + 0.7 * fogFactor);
+        // Diffuse
+        float diff = max(dot(norm, lightDir), 0.0);
+        vec3 diffuse = diff * vec3(1.0);
+
+        // Specular
+        float specularStrength = 0.5;
+        vec3 viewDir = normalize(viewPos - FragPos);
+        vec3 reflectDir = reflect(-lightDir, norm);
+        float spec = pow(max(dot(viewDir, reflectDir), 0.0), 32);
+        vec3 specular = specularStrength * spec * vec3(1.0);
+
+        // Combine lighting
+        vec3 result = (ambient + diffuse + specular) * vertexColor.rgb;
+        finalColor = vec4(result, vertexColor.a);
+    } else {
+        // Wireframe mode - much darker for better contrast
+        finalColor = vec4(0.0, 0.0, 0.0, 1.0);  // Black wireframe
     }
 
-    // Increase line thickness perception with slight glow
-    float alpha = 1.0;
-
-    FragColor = vec4(color, alpha);
+    FragColor = finalColor;
 }

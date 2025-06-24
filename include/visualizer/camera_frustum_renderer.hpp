@@ -29,7 +29,6 @@ namespace gs {
     private:
         void createFrustumGeometry();
         void updateInstanceBuffer();
-        void calculateSceneBounds();
 
         struct InstanceData {
             glm::mat4 camera_to_world;
@@ -46,13 +45,15 @@ namespace gs {
 
         unsigned int vao_ = 0;
         unsigned int vbo_ = 0;
-        unsigned int ebo_ = 0;
+        unsigned int face_ebo_ = 0;
+        unsigned int edge_ebo_ = 0;
         unsigned int instance_vbo_ = 0;
-        unsigned int num_indices_ = 0;
+        unsigned int num_face_indices_ = 0;
+        unsigned int num_edge_indices_ = 0;
 
         bool show_train_ = true;
         bool show_test_ = true;
-        float frustum_scale_ = 1.0f;
+        float frustum_scale_ = .01f;
 
         glm::vec3 train_color_ = glm::vec3(0.3f, 0.8f, 0.3f);     // Nice green for train
         glm::vec3 test_color_ = glm::vec3(0.9f, 0.3f, 0.3f);      // Nice red for test
