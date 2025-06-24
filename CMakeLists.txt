@@ -79,7 +79,6 @@ set(HOST_SOURCES
         src/rasterizer.cpp
         src/metrics.cpp
         src/rasterizer_autograd.cpp
-        src/viewer.cpp
         src/external/tinyply.cpp
         src/bilateral_grid.cpp
         src/selective_adam.cpp
@@ -206,6 +205,10 @@ set(VISUALIZER_SOURCES
         src/visualizer/gui/visualization_panel.cpp
         src/visualizer/camera_frustum_renderer.cpp
         src/visualizer/gui/dataset_viewer_panel.cpp
+        src/visualizer/scene_renderer.cpp
+        src/visualizer/input_handler.cpp
+        src/visualizer/viewer_base.cpp
+        src/visualizer/gs_viewer.cpp
 )
 
 # Add CUDA interop source only if available

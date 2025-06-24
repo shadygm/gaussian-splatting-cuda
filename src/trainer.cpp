@@ -1,7 +1,7 @@
 #include "core/trainer.hpp"
 #include "core/rasterizer.hpp"
 #include "kernels/fused_ssim.cuh"
-#include "visualizer/detail.hpp"
+#include "visualizer/gs_viewer.hpp"
 #include <chrono>
 #include <iostream>
 #include <numeric>
@@ -206,7 +206,7 @@ namespace gs {
         RenderOutput r_output;
 
         if (viewer_) {
-            std::lock_guard<std::mutex> lock(viewer_->splat_mtx_);
+            std::lock_guard<std::mutex> lock(viewer_->getSplatMutex());
             r_output = render_fn();
         } else {
             r_output = render_fn();
@@ -253,7 +253,7 @@ namespace gs {
             };
 
             if (viewer_) {
-                std::lock_guard<std::mutex> lock(viewer_->splat_mtx_);
+                std::lock_guard<std::mutex> lock(viewer_->getSplatMutex());
                 do_strategy();
             } else {
                 do_strategy();
@@ -270,16 +270,16 @@ namespace gs {
                           strategy_->is_refining(iter));
 
         if (viewer_) {
-            if (viewer_->info_) {
-                auto& info = viewer_->info_;
-                std::lock_guard<std::mutex> lock(viewer_->info_->mtx);
+            auto info = viewer_->getTrainingInfo();
+            if (info) {
+                std::lock_guard<std::mutex> lock(info->mtx);
                 info->updateProgress(iter, params_.optimization.iterations);
                 info->updateNumSplats(static_cast<size_t>(strategy_->get_model().size()));
                 info->updateLoss(loss.item<float>());
             }
 
-            if (viewer_->notifier_) {
-                auto& notifier = viewer_->notifier_;
+            auto notifier = viewer_->getNotifier();
+            if (notifier) {
                 std::unique_lock<std::mutex> lock(notifier->mtx);
                 notifier->cv.wait(lock, [&notifier] { return notifier->ready; });
             }
@@ -294,10 +294,12 @@ namespace gs {
         training_complete_ = false;
 
         // Wait for the start signal from GUI if visualization is enabled
-        if (viewer_ && viewer_->notifier_) {
-            auto& notifier = viewer_->notifier_;
-            std::unique_lock<std::mutex> lock(notifier->mtx);
-            notifier->cv.wait(lock, [&notifier] { return notifier->ready; });
+        if (viewer_) {
+            auto notifier = viewer_->getNotifier();
+            if (notifier) {
+                std::unique_lock<std::mutex> lock(notifier->mtx);
+                notifier->cv.wait(lock, [&notifier] { return notifier->ready; });
+            }
         }
 
         is_running_ = true; // Now we can start

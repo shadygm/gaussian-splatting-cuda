@@ -26,6 +26,9 @@ namespace gs {
         bool shouldShowImageOverlay() const { return show_image_overlay_; }
         torch::Tensor getCurrentImage() const { return current_image_; }
 
+        void previousCamera();
+        void nextCamera();
+
     private:
         void renderDatasetInfo();
         void renderCameraControls();
@@ -33,8 +36,6 @@ namespace gs {
 
         void loadCurrentCameraImage();
         void jumpToCamera(int index);
-        void previousCamera();
-        void nextCamera();
 
         std::shared_ptr<CameraDataset> dataset_;
         CameraFrustumRenderer* frustum_renderer_;

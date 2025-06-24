@@ -1,7 +1,7 @@
 #include "visualizer/camera_frustum_renderer.hpp"
 #include "visualizer/gl_headers.hpp"
-#include "visualizer/viewport.hpp"
 #include "visualizer/opengl_state_manager.hpp"
+#include "visualizer/viewport.hpp"
 #include <filesystem>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -71,12 +71,12 @@ namespace gs {
         // In camera space: -Z is forward (viewing direction), +Y is up, +X is right
         std::vector<glm::vec3> vertices = {
             // Base vertices (in XY plane, at z = 0.5)
-            glm::vec3(-0.5f, -0.5f,  0.5f),  // 0 bottom-left
-            glm::vec3( 0.5f, -0.5f,  0.5f),  // 1 bottom-right
-            glm::vec3( 0.5f,  0.5f,  0.5f),  // 2 top-right
-            glm::vec3(-0.5f,  0.5f,  0.5f),  // 3 top-left
+            glm::vec3(-0.5f, -0.5f, 0.5f), // 0 bottom-left
+            glm::vec3(0.5f, -0.5f, 0.5f),  // 1 bottom-right
+            glm::vec3(0.5f, 0.5f, 0.5f),   // 2 top-right
+            glm::vec3(-0.5f, 0.5f, 0.5f),  // 3 top-left
             // Apex (camera position, at z = -0.5)
-            glm::vec3( 0.0f,  0.0f, -0.5f),  // 4
+            glm::vec3(0.0f, 0.0f, -0.5f), // 4
         };
 
         // Indices for solid faces (triangles)
@@ -85,23 +85,22 @@ namespace gs {
             0, 1, 2,
             0, 2, 3,
             // Sides
-            0, 4, 1,  // Bottom face
-            1, 4, 2,  // Right face
-            2, 4, 3,  // Top face
-            3, 4, 0   // Left face
+            0, 4, 1, // Bottom face
+            1, 4, 2, // Right face
+            2, 4, 3, // Top face
+            3, 4, 0  // Left face
         };
 
         // Indices for wireframe edges (lines)
         std::vector<unsigned int> edge_indices = {
-            0, 1,  // Base edges
+            0, 1, // Base edges
             1, 2,
             2, 3,
             3, 0,
-            0, 4,  // Edges to apex
+            0, 4, // Edges to apex
             1, 4,
             2, 4,
-            3, 4
-        };
+            3, 4};
 
         num_face_indices_ = face_indices.size();
         num_edge_indices_ = edge_indices.size();
@@ -247,8 +246,6 @@ namespace gs {
             std::cerr << "No valid camera data to render!" << std::endl;
             return;
         }
-
-        std::cout << "Updating instance buffer with " << valid_cameras << " valid cameras" << std::endl;
 
         // Upload instance data
         glBindBuffer(GL_ARRAY_BUFFER, instance_vbo_);

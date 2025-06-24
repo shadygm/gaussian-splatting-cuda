@@ -3,9 +3,8 @@
 #include "core/mcmc.hpp"
 #include "core/parameters.hpp"
 #include "core/trainer.hpp"
-#include "visualizer/detail.hpp"
+#include "visualizer/gs_viewer.hpp"
 #include <iostream>
-#include <memory>
 #include <thread>
 
 int main(int argc, char* argv[]) {

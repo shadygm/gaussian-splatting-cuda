@@ -1,0 +1,214 @@
+#include "visualizer/input_handler.hpp"
+#include <iostream>
+
+namespace gs {
+
+    InputHandler::InputHandler(GLFWwindow* window, Viewport* viewport)
+        : window_(window),
+          viewport_(viewport) {
+
+        // Don't set GLFW callbacks here - ViewerBase handles that
+
+        // Setup default controls
+        setupDefaultCameraControls();
+    }
+
+    InputHandler::~InputHandler() {
+        // No longer managing instance pointer
+    }
+
+    void InputHandler::setupDefaultCameraControls() {
+        // Default key bindings
+        addKeyBinding(
+            GLFW_KEY_F, [this]() {
+                viewport_->reset();
+            },
+            "Focus on world origin");
+
+        addKeyBinding(
+            GLFW_KEY_H, [this]() {
+                viewport_->target = glm::vec3(0.0f, 0.0f, 0.0f);
+                viewport_->azimuth = -135.0f;
+                viewport_->elevation = -60.0f;
+                viewport_->distance = 10.0f;
+                std::cout << "Camera set to home view at world origin" << std::endl;
+            },
+            "Home view (look down at origin)");
+
+        // Mouse controls
+        addMouseButtonCallback(GLFW_MOUSE_BUTTON_LEFT,
+                               [this](int button, int action, double x, double y) -> bool {
+                                   if (action == GLFW_PRESS) {
+                                       // Check view cube hit first
+                                       if (view_cube_hit_test_) {
+                                           int hit = view_cube_hit_test_(x, y);
+                                           if (hit >= 0) {
+                                               // Align camera to face
+                                               switch (hit) {
+                                               case 0: viewport_->alignToAxis('x', true); break;
+                                               case 1: viewport_->alignToAxis('x', false); break;
+                                               case 2: viewport_->alignToAxis('y', true); break;
+                                               case 3: viewport_->alignToAxis('y', false); break;
+                                               case 4: viewport_->alignToAxis('z', true); break;
+                                               case 5: viewport_->alignToAxis('z', false); break;
+                                               }
+                                               return true; // Handled
+                                           }
+                                       }
+
+                                       // Start rotation
+                                       viewport_->initScreenPos(glm::vec2(x, y));
+                                       dragging_ = true;
+                                       drag_button_ = button;
+                                       return true;
+                                   } else if (action == GLFW_RELEASE && button == drag_button_) {
+                                       dragging_ = false;
+                                       drag_button_ = -1;
+                                       viewport_->mouseInitialized = false;
+                                       return true;
+                                   }
+                                   return false;
+                               });
+
+        addMouseButtonCallback(GLFW_MOUSE_BUTTON_RIGHT,
+                               [this](int button, int action, double x, double y) -> bool {
+                                   if (action == GLFW_PRESS) {
+                                       viewport_->initScreenPos(glm::vec2(x, y));
+                                       dragging_ = true;
+                                       drag_button_ = button;
+                                       return true;
+                                   } else if (action == GLFW_RELEASE && button == drag_button_) {
+                                       dragging_ = false;
+                                       drag_button_ = -1;
+                                       viewport_->mouseInitialized = false;
+                                       return true;
+                                   }
+                                   return false;
+                               });
+
+        // Mouse move for camera control
+        setMouseMoveCallback([this](double x, double y, double dx, double dy) {
+            if (!dragging_)
+                return;
+
+            glm::vec2 currentPos(x, y);
+
+            if (drag_button_ == GLFW_MOUSE_BUTTON_LEFT) {
+                viewport_->rotate(currentPos);
+            } else if (drag_button_ == GLFW_MOUSE_BUTTON_RIGHT) {
+                viewport_->translate(currentPos);
+            }
+        });
+
+        // Scroll for zoom
+        setScrollCallback([this](double offset) {
+            float delta = static_cast<float>(offset);
+            if (std::abs(delta) > 1.0e-2f) {
+                viewport_->zoom(delta);
+            }
+        });
+    }
+
+    void InputHandler::addKeyBinding(int key, std::function<void()> action,
+                                     const std::string& description, int mods) {
+        uint32_t hash = makeKeyHash(key, mods);
+        key_bindings_[hash] = {key, mods, action, description};
+    }
+
+    void InputHandler::removeKeyBinding(int key, int mods) {
+        uint32_t hash = makeKeyHash(key, mods);
+        key_bindings_.erase(hash);
+    }
+
+    void InputHandler::addMouseButtonCallback(int button, MouseButtonCallback callback) {
+        mouse_button_callbacks_[button] = callback;
+    }
+
+    void InputHandler::setMouseMoveCallback(MouseMoveCallback callback) {
+        mouse_move_callback_ = callback;
+    }
+
+    void InputHandler::setScrollCallback(ScrollCallback callback) {
+        scroll_callback_ = callback;
+    }
+
+    std::vector<std::pair<std::string, std::string>> InputHandler::getKeyBindings() const {
+        std::vector<std::pair<std::string, std::string>> bindings;
+
+        for (const auto& [hash, binding] : key_bindings_) {
+            std::string key_str;
+
+            // Convert key to string
+            switch (binding.key) {
+            case GLFW_KEY_F: key_str = "F"; break;
+            case GLFW_KEY_G: key_str = "G"; break;
+            case GLFW_KEY_H: key_str = "H"; break;
+            case GLFW_KEY_ESCAPE: key_str = "ESC"; break;
+            case GLFW_KEY_LEFT: key_str = "Left Arrow"; break;
+            case GLFW_KEY_RIGHT: key_str = "Right Arrow"; break;
+            default:
+                if (binding.key >= GLFW_KEY_A && binding.key <= GLFW_KEY_Z) {
+                    key_str = std::string(1, 'A' + (binding.key - GLFW_KEY_A));
+                } else {
+                    key_str = "Key " + std::to_string(binding.key);
+                }
+            }
+
+            // Add modifiers
+            if (binding.mods & GLFW_MOD_CONTROL)
+                key_str = "Ctrl+" + key_str;
+            if (binding.mods & GLFW_MOD_SHIFT)
+                key_str = "Shift+" + key_str;
+            if (binding.mods & GLFW_MOD_ALT)
+                key_str = "Alt+" + key_str;
+
+            bindings.push_back({key_str, binding.description});
+        }
+
+        // Add mouse controls
+        bindings.push_back({"Left Mouse", "Orbit camera"});
+        bindings.push_back({"Right Mouse", "Pan camera"});
+        bindings.push_back({"Scroll", "Zoom camera"});
+
+        return bindings;
+    }
+
+    // Handle methods (no longer checking GUI - that's done in ViewerBase)
+    void InputHandler::handleMouseButton(int button, int action, double x, double y) {
+        // Check button callbacks
+        auto it = mouse_button_callbacks_.find(button);
+        if (it != mouse_button_callbacks_.end()) {
+            if (it->second(button, action, x, y)) {
+                return; // Handled
+            }
+        }
+    }
+
+    void InputHandler::handleMouseMove(double x, double y) {
+        double dx = x - last_x_;
+        double dy = y - last_y_;
+        last_x_ = x;
+        last_y_ = y;
+
+        if (mouse_move_callback_) {
+            mouse_move_callback_(x, y, dx, dy);
+        }
+    }
+
+    void InputHandler::handleScroll(double offset) {
+        if (scroll_callback_) {
+            scroll_callback_(offset);
+        }
+    }
+
+    void InputHandler::handleKey(int key, int scancode, int action, int mods) {
+        if (action == GLFW_PRESS || action == GLFW_REPEAT) {
+            uint32_t hash = makeKeyHash(key, mods);
+            auto it = key_bindings_.find(hash);
+            if (it != key_bindings_.end()) {
+                it->second.action();
+            }
+        }
+    }
+
+} // namespace gs
