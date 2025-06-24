@@ -190,13 +190,13 @@ namespace gs {
         if (!initialized_)
             return;
 
-        // Use state guard for automatic restoration
+        // Save current state
         OpenGLStateManager::StateGuard guard(getGLStateManager());
 
         // Set up viewport for cube rendering
         glViewport(x - size / 2, y - size / 2, size, size);
 
-        // Enable required states
+        // Use preset for view cube
         getGLStateManager().setForViewCube();
 
         // Clear depth in the cube area
@@ -205,10 +205,7 @@ namespace gs {
         glClear(GL_DEPTH_BUFFER_BIT);
         glDisable(GL_SCISSOR_TEST);
 
-        // IMPORTANT: The view cube should show the camera orientation in OpenGL space
-        // (where the user is working), NOT in COLMAP space
-        // So we use the viewport camera directly without conversion
-
+        // Use viewport rotation directly without conversion
         glm::mat4 projection = glm::perspective(glm::radians(50.0f), 1.0f, 0.1f, 10.0f);
         glm::mat4 view = getViewMatrix(viewport.getRotationMatrix(), 3.0f);
         glm::mat4 model = glm::mat4(1.0f);

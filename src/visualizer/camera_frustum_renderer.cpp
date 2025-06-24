@@ -337,8 +337,5 @@ namespace gs {
 
         glBindVertexArray(0);
         frustum_shader_->unbind();
-
-        // State automatically restored by guard destructor
     }
-
 } // namespace gs

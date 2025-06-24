@@ -39,11 +39,6 @@ namespace gs {
         // Initialize all renderers
         bool initialize(const std::string& shader_path);
 
-        // Main render methods
-        void renderScene(const Viewport& viewport,
-                         Trainer* trainer = nullptr,
-                         const RenderSettings& settings = RenderSettings());
-
         void renderSplats(const Viewport& viewport,
                           Trainer* trainer,
                           std::shared_ptr<RenderSettingsPanel::RenderingConfig> config,

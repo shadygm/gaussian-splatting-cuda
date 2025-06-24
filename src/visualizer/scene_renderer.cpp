@@ -95,13 +95,6 @@ namespace gs {
         }
     }
 
-    void SceneRenderer::renderScene(const Viewport& viewport,
-                                    Trainer* trainer,
-                                    const RenderSettings& settings) {
-        // This is now handled by individual render calls from the viewer
-        // This method could orchestrate the entire scene rendering if desired
-    }
-
     void SceneRenderer::renderGrid(const Viewport& viewport, const RenderSettings& settings) {
         if (!grid_renderer_ || !settings.show_grid) {
             return;
