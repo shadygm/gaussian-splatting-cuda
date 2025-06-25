@@ -74,16 +74,24 @@ namespace gs {
                     // Get camera position from world_view_transform
                     auto w2c_t = cam->world_view_transform();
                     if (w2c_t.defined() && w2c_t.numel() > 0) {
-                        w2c_t = w2c_t.to(torch::kCPU).squeeze(0).transpose(0, 1);
-                        auto R = w2c_t.slice(0, 0, 3).slice(1, 0, 3);
-                        auto t = w2c_t.slice(0, 0, 3).slice(1, 3);
-                        auto cam_pos = -torch::matmul(R.transpose(0, 1), t.squeeze());
+                        w2c_t = w2c_t.to(torch::kCPU).squeeze(0);
+
+                        // Extract rotation and translation
+                        torch::Tensor R = w2c_t.slice(0, 0, 3).slice(1, 0, 3);
+                        torch::Tensor t = w2c_t.slice(0, 0, 3).slice(1, 3);
+
+                        // Camera position in world space: -R^T * t
+                        torch::Tensor cam_pos = -torch::matmul(R.transpose(0, 1), t.squeeze());
 
                         auto pos_data = cam_pos.accessor<float, 1>();
-                        std::cout << "Camera " << i << " position: ("
+                        std::cout << "Camera " << i << " position (COLMAP): ("
                                   << pos_data[0] << ", "
                                   << pos_data[1] << ", "
                                   << pos_data[2] << ")" << std::endl;
+
+                        // Also print the transform matrix for debugging
+                        std::cout << "W2C transform:\n"
+                                  << w2c_t << std::endl;
                     } else {
                         std::cerr << "Camera " << i << " has no valid transform!" << std::endl;
                     }
@@ -92,7 +100,6 @@ namespace gs {
                 }
             }
         }
-
         // Calculate scene bounds for better initial view
         if (cameras.size() > 0) {
             torch::Tensor all_centers = torch::zeros({static_cast<long>(cameras.size()), 3});

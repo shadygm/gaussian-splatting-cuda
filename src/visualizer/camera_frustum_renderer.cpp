@@ -77,30 +77,29 @@ namespace gs {
         // ------------------------------------------------------------
         std::vector<glm::vec3> vertices = {
             // Base vertices  (CCW when seen from outside the frustum)
-            {-0.5f, -0.5f, -0.5f},   // 0  bottom‑left
-            { 0.5f, -0.5f, -0.5f},   // 1  bottom‑right
-            { 0.5f,  0.5f, -0.5f},   // 2  top‑right
-            {-0.5f,  0.5f, -0.5f},   // 3  top‑left
+            {-0.5f, -0.5f, -0.5f}, // 0  bottom‑left
+            {0.5f, -0.5f, -0.5f},  // 1  bottom‑right
+            {0.5f, 0.5f, -0.5f},   // 2  top‑right
+            {-0.5f, 0.5f, -0.5f},  // 3  top‑left
             // Apex (camera position)
-            { 0.0f,  0.0f,  0.0f}     // 4
+            {0.0f, 0.0f, 0.0f} // 4
         };
 
         // Faces (18 indices, CCW from outside)
         std::vector<unsigned int> face_indices = {
-            // Base (normal points towards +Z, i.e. inside – it’s never visible)
+            // Base (normal points towards +Z, i.e. inside – it's never visible)
             0, 1, 2,
             0, 2, 3,
             // Sides
             0, 4, 1,
             1, 4, 2,
             2, 4, 3,
-            3, 4, 0
-        };
+            3, 4, 0};
 
         // Wireframe edges (unchanged)
         std::vector<unsigned int> edge_indices = {
-            0, 1,  1, 2,  2, 3,  3, 0,  // base square
-            0, 4,  1, 4,  2, 4,  3, 4   // edges to apex
+            0, 1, 1, 2, 2, 3, 3, 0, // base square
+            0, 4, 1, 4, 2, 4, 3, 4  // edges to apex
         };
 
         num_face_indices_ = face_indices.size();
@@ -137,7 +136,6 @@ namespace gs {
 
         std::cout << "Frustum geometry rebuilt (apex at origin, base on -Z)\n";
     }
-
 
     void CameraFrustumRenderer::setCameras(const std::vector<std::shared_ptr<Camera>>& cameras,
                                            const std::vector<bool>& is_test_camera) {
@@ -196,80 +194,62 @@ namespace gs {
         updateInstanceBuffer();
     }
 
-    // -----------------------------------------------------------------------------
-    //  CameraFrustumRenderer::updateInstanceBuffer   – robust orientation fix
-    // -----------------------------------------------------------------------------
-    void CameraFrustumRenderer::updateInstanceBuffer()
-    {
+    void CameraFrustumRenderer::updateInstanceBuffer() {
         if (!initialized_ || cameras_.empty())
             return;
 
-        // OpenGL‑camera  →  COLMAP‑camera conversion (column‑major)
         const glm::mat4 GL_TO_COLMAP =
-            glm::scale(glm::mat4(1.0f), glm::vec3( 1.0f, -1.0f, -1.0f)); // det +1
+            glm::scale(glm::mat4(1.0f), glm::vec3(1.0f, -1.0f, -1.0f));
 
         std::vector<InstanceData> instances;
         instances.reserve(cameras_.size());
 
-        for (size_t i = 0; i < cameras_.size(); ++i)
-        {
+        for (size_t i = 0; i < cameras_.size(); ++i) {
             if (!((is_test_camera_[i] && show_test_) ||
                   (!is_test_camera_[i] && show_train_)))
-                continue;   // hidden camera
+                continue;
 
             try {
-                // -----------------------------------------------------------------
-                // 1) grab world→camera matrix from torch, bring to CPU
-                // -----------------------------------------------------------------
-                torch::Tensor w2c_tensor = cameras_[i]->world_view_transform();
-                if (!w2c_tensor.defined() ||
-                    w2c_tensor.size(0) != 1 || w2c_tensor.size(1) != 4 ||
-                    w2c_tensor.size(2) != 4)
-                {
-                    std::cerr << "Camera " << i << " has invalid transform – skipped\n";
-                    continue;
-                }
-                w2c_tensor = w2c_tensor.to(torch::kCPU).squeeze(0);
+                //------------------------------------------------------------------
+                // 1) world→camera 4×4 from torch  →  CPU → glm
+                //------------------------------------------------------------------
+                torch::Tensor w2c = cameras_[i]->world_view_transform().to(torch::kCPU).squeeze(0);
 
-                // -----------------------------------------------------------------
-                // 2) convert tensor to glm::mat4  (torch is row‑major)
-                // -----------------------------------------------------------------
-                auto m = w2c_tensor.accessor<float,2>();      // [row][col]
-
-                glm::mat4 w2c(1.0f);                          // column‑major
+                glm::mat4 w2c_glm(1.0f);
+                auto m = w2c.accessor<float, 2>();
                 for (int r = 0; r < 4; ++r)
                     for (int c = 0; c < 4; ++c)
-                        w2c[c][r] = m[r][c];
+                        w2c_glm[c][r] = m[r][c]; // row→column
 
-                // -----------------------------------------------------------------
-                // 3) camera→world in COLMAP coords  (inverse of w2c)
-                // -----------------------------------------------------------------
-                glm::mat4 c2w_colmap = glm::inverse(w2c);
+                //------------------------------------------------------------------
+                // 2) camera→world in COLMAP coords
+                //------------------------------------------------------------------
+                glm::mat4 c2w_colmap = glm::inverse(w2c_glm);
 
-                // -----------------------------------------------------------------
-                // 4) final model matrix for our GL‑space frustum:
-                //        M =  c2w_colmap  *  GL_TO_COLMAP  *  Scale
-                // -----------------------------------------------------------------
-                glm::mat4 model = c2w_colmap * GL_TO_COLMAP;
-                model = model * glm::scale(glm::mat4(1.0f),
-                                           glm::vec3(frustum_scale_));
+                //------------------------------------------------------------------
+                // 3) build model matrix
+                //        inverse(scene) · c2w · flip · scale
+                //------------------------------------------------------------------
+                glm::mat4 model =
+                    glm::inverse(scene_transform_) * //  ←  FIX ▶
+                    c2w_colmap * GL_TO_COLMAP *
+                    glm::scale(glm::mat4(1.0f),
+                               glm::vec3(frustum_scale_));
 
-                // -----------------------------------------------------------------
-                // 5) pack instance data
-                // -----------------------------------------------------------------
+                //------------------------------------------------------------------
+                // 4) pack instance
+                //------------------------------------------------------------------
                 InstanceData inst;
                 inst.camera_to_world = model;
-                inst.color   = is_test_camera_[i] ? test_color_ : train_color_;
-                inst.fov_x   = cameras_[i]->FoVx();
-                inst.fov_y   = cameras_[i]->FoVy();
-                inst.aspect  = static_cast<float>(cameras_[i]->image_width())  /
+                inst.color = is_test_camera_[i] ? test_color_ : train_color_;
+                inst.fov_x = cameras_[i]->FoVx();
+                inst.fov_y = cameras_[i]->FoVy();
+                inst.aspect = static_cast<float>(cameras_[i]->image_width()) /
                               static_cast<float>(cameras_[i]->image_height());
 
                 instances.push_back(inst);
-            }
-            catch (const std::exception& e) {
+            } catch (const std::exception& e) {
                 std::cerr << "Camera " << i << " error: " << e.what() << '\n';
-                continue;
             }
         }
 
@@ -278,9 +258,9 @@ namespace gs {
             return;
         }
 
-        // -------------------------------------------------------------------------
-        // 6) upload GPU buffer + configure instanced attributes
-        // -------------------------------------------------------------------------
+        //---------------------------------------------------------------------------
+        // 5) upload buffer & configure attributes (unchanged)
+        //---------------------------------------------------------------------------
         glBindBuffer(GL_ARRAY_BUFFER, instance_vbo_);
         glBufferData(GL_ARRAY_BUFFER,
                      instances.size() * sizeof(InstanceData),
@@ -289,7 +269,6 @@ namespace gs {
 
         glBindVertexArray(vao_);
 
-        // camera_to_world matrix  → attribute locations 1‑4
         for (int col = 0; col < 4; ++col) {
             glEnableVertexAttribArray(1 + col);
             glVertexAttribPointer(1 + col, 4, GL_FLOAT, GL_FALSE,
@@ -298,14 +277,12 @@ namespace gs {
             glVertexAttribDivisor(1 + col, 1);
         }
 
-        // colour
         glEnableVertexAttribArray(5);
         glVertexAttribPointer(5, 3, GL_FLOAT, GL_FALSE,
                               sizeof(InstanceData),
                               reinterpret_cast<void*>(offsetof(InstanceData, color)));
         glVertexAttribDivisor(5, 1);
 
-        // (fov_x, fov_y, aspect)
         glEnableVertexAttribArray(6);
         glVertexAttribPointer(6, 3, GL_FLOAT, GL_FALSE,
                               sizeof(InstanceData),
@@ -314,9 +291,6 @@ namespace gs {
 
         glBindVertexArray(0);
     }
-
-
-
 
     void CameraFrustumRenderer::render(const Viewport& viewport, int highlight_index) {
         if (!initialized_ || cameras_.empty()) {

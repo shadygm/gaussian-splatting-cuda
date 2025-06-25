@@ -128,6 +128,8 @@ namespace gs {
         glfwSetScrollCallback(window_, scrollCallback);
         glfwSetKeyCallback(window_, keyCallback);
 
+        std::cout << "GLFW callbacks registered successfully" << std::endl;
+
         return true;
     }
 
@@ -305,6 +307,56 @@ namespace gs {
 
         // Setup additional key bindings
         setupAdditionalKeyBindings();
+
+        // Connect gizmo hit test and interaction
+        if (getSceneRenderer() && getSceneRenderer()->getRotationGizmo()) {
+            // Set gizmo hit test
+            getInputHandler()->setGizmoHitTest([this](double x, double y) -> int {
+                auto gizmo = getSceneRenderer()->getRotationGizmo();
+                if (gizmo && gizmo->isVisible()) {
+                    auto axis = gizmo->hitTest(getViewport(), x, y);
+                    if (axis != RotationGizmo::Axis::NONE) {
+                        std::cout << "Gizmo hit! Starting rotation on axis " << static_cast<int>(axis) << std::endl;
+                        gizmo->startRotation(axis, x, y, getViewport());
+                        return static_cast<int>(axis);
+                    }
+                }
+                return -1;
+            });
+
+            // Update the existing mouse move callback to handle gizmo
+            getInputHandler()->setMouseMoveCallback([this](double x, double y, double dx, double dy) {
+                auto gizmo = getSceneRenderer()->getRotationGizmo();
+
+                // Handle gizmo rotation if active
+                if (getInputHandler()->isGizmoDragging() && gizmo && gizmo->isRotating()) {
+                    gizmo->updateRotation(x, y, getViewport());
+                    return; // Don't process camera movement when dragging gizmo
+                }
+
+                // Let the default handler process camera movement
+            });
+
+            // Make sure gizmo rotation ends properly
+            // This is important - we need to add this to the existing mouse button callback
+            auto originalButtonCallback = getInputHandler()->getMouseButtonCallback(GLFW_MOUSE_BUTTON_LEFT);
+            getInputHandler()->addMouseButtonCallback(GLFW_MOUSE_BUTTON_LEFT,
+                                                      [this, originalButtonCallback](int button, int action, double x, double y) -> bool {
+                                                          if (action == GLFW_RELEASE) {
+                                                              auto gizmo = getSceneRenderer()->getRotationGizmo();
+                                                              if (gizmo && gizmo->isRotating()) {
+                                                                  std::cout << "Ending gizmo rotation" << std::endl;
+                                                                  gizmo->endRotation();
+                                                              }
+                                                          }
+                                                          return false; // Let other handlers process too
+                                                      });
+        }
+
+        // Update visualization panel to include scene renderer
+        if (viz_panel_) {
+            viz_panel_->setSceneRenderer(getSceneRenderer());
+        }
     }
 
     void GSViewer::onClose() {
@@ -352,6 +404,9 @@ namespace gs {
                 &render_settings_.show_grid,
                 &render_settings_.show_view_cube);
 
+            // Connect scene renderer to visualization panel for gizmo control
+            viz_panel_->setSceneRenderer(getSceneRenderer());
+
             gui->addPanel(camera_panel_);
             gui->addPanel(viz_panel_);
 
@@ -390,6 +445,17 @@ namespace gs {
             },
             "Toggle camera frustums");
 
+        // Toggle rotation gizmo
+        input->addKeyBinding(
+            GLFW_KEY_R, [this]() {
+                if (getSceneRenderer()) {
+                    bool visible = getSceneRenderer()->isGizmoVisible();
+                    getSceneRenderer()->setGizmoVisible(!visible);
+                    std::cout << "Rotation gizmo " << (!visible ? "enabled" : "disabled") << std::endl;
+                }
+            },
+            "Toggle rotation gizmo");
+
         // Navigation keys for dataset
         input->addKeyBinding(
             GLFW_KEY_LEFT, [this]() {
@@ -415,10 +481,17 @@ namespace gs {
                 }
             },
             "Close image overlay");
+
+        // Add help key
+        input->addKeyBinding(
+            GLFW_KEY_SLASH, [this]() {
+                show_help_ = !show_help_;
+            },
+            "Toggle help", GLFW_MOD_SHIFT); // Shift+/ = ?
     }
 
     void GSViewer::updateSceneBounds() {
-        if (!trainer_ || scene_bounds_initialized_) {
+        if (!trainer_) {
             return;
         }
 
@@ -427,8 +500,12 @@ namespace gs {
             auto means = model.get_means();
 
             if (means.size(0) > 0) {
-                auto min_vals = std::get<0>(means.min(0));
-                auto max_vals = std::get<0>(means.max(0));
+                // Move to CPU for calculations
+                auto means_cpu = means.to(torch::kCPU);
+
+                // Calculate bounding box
+                auto min_vals = std::get<0>(means_cpu.min(0));
+                auto max_vals = std::get<0>(means_cpu.max(0));
 
                 glm::vec3 min_point(
                     min_vals[0].item<float>(),
@@ -440,33 +517,81 @@ namespace gs {
                     max_vals[1].item<float>(),
                     max_vals[2].item<float>());
 
-                scene_center_ = (min_point + max_point) * 0.5f;
+                // Calculate median center (more robust than mean for point clouds)
+                auto median_x = means_cpu.select(1, 0).median();
+                auto median_y = means_cpu.select(1, 1).median();
+                auto median_z = means_cpu.select(1, 2).median();
+
+                glm::vec3 median_center(
+                    median_x.item<float>(),
+                    median_y.item<float>(),
+                    median_z.item<float>());
+
+                // Use median for center, but calculate radius from bounding box
+                scene_center_ = median_center;
                 scene_radius_ = glm::length(max_point - min_point) * 0.5f;
 
                 // Clamp radius to reasonable range
                 scene_radius_ = std::clamp(scene_radius_, 0.1f, 100.0f);
 
                 scene_bounds_valid_ = true;
-                scene_bounds_initialized_ = true;
 
-                std::cout << "Scene bounds - Center: ("
-                          << scene_center_.x << ", "
-                          << scene_center_.y << ", "
-                          << scene_center_.z << "), Radius: "
-                          << scene_radius_ << std::endl;
-
-                // Update components with scene bounds
+                // Update components with current scene bounds
                 getViewport().camera.sceneRadius = scene_radius_;
                 getViewport().camera.minZoom = scene_radius_ * 0.01f;
                 getViewport().camera.maxZoom = scene_radius_ * 100.0f;
 
-                getSceneRenderer()->updateSceneBounds(scene_center_, scene_radius_);
+                // Update scene renderer with bounds
+                if (getSceneRenderer()) {
+                    getSceneRenderer()->updateSceneBounds(scene_center_, scene_radius_);
+
+                    // Update rotation gizmo position
+                    if (getSceneRenderer()->getRotationGizmo()) {
+                        getSceneRenderer()->getRotationGizmo()->setPosition(scene_center_);
+
+                        // Only print gizmo info on first initialization
+                        if (!scene_bounds_initialized_) {
+                            std::cout << "Gizmo positioned at scene center: ("
+                                      << scene_center_.x << ", " << scene_center_.y << ", " << scene_center_.z
+                                      << ")" << std::endl;
+                        }
+                    }
+
+                    // Reset camera frustum transform to identity initially
+                    // This ensures cameras and point cloud start in sync
+                    if (getSceneRenderer()->getCameraRenderer()) {
+                        getSceneRenderer()->getCameraRenderer()->setSceneTransform(glm::mat4(1.0f));
+                    }
+                }
 
                 if (camera_panel_) {
                     camera_panel_->setSceneBounds(scene_center_, scene_radius_);
                 }
 
-                std::cout << "Camera remains at world origin. Use mouse to navigate." << std::endl;
+                // Only print on first initialization
+                if (!scene_bounds_initialized_) {
+                    std::cout << "Scene bounds - Median Center: ("
+                              << scene_center_.x << ", "
+                              << scene_center_.y << ", "
+                              << scene_center_.z << "), Radius: "
+                              << scene_radius_ << std::endl;
+
+                    std::cout << "Bounding box: ("
+                              << min_point.x << ", " << min_point.y << ", " << min_point.z
+                              << ") to ("
+                              << max_point.x << ", " << max_point.y << ", " << max_point.z
+                              << ")" << std::endl;
+
+                    // Also update the camera to look at the scene
+                    // Set a reasonable initial view position
+                    float initial_distance = scene_radius_ * 3.0f; // View from 3x radius away
+                    getViewport().target = scene_center_;
+                    getViewport().distance = initial_distance;
+
+                    std::cout << "Camera target set to scene center, distance: " << initial_distance << std::endl;
+
+                    scene_bounds_initialized_ = true;
+                }
             }
         }
     }
@@ -502,10 +627,13 @@ namespace gs {
             renderer->renderSplats(getViewport(), trainer_, render_config_, splat_mutex_);
         }
 
-        // 4. Draw view cube
+        // 4. Draw rotation gizmo
+        renderer->renderGizmo(getViewport());
+
+        // 5. Draw view cube
         renderer->renderViewCube(getViewport(), render_settings_.show_view_cube);
 
-        // 5. Draw image overlay if enabled
+        // 6. Draw image overlay if enabled
         if (render_settings_.show_image_overlay && dataset_panel_) {
             auto image = dataset_panel_->getCurrentImage();
             if (image.defined()) {
@@ -519,8 +647,54 @@ namespace gs {
             }
         }
 
+        // 7. Draw help overlay if enabled
+        if (show_help_) {
+            drawHelpOverlay();
+        }
+
         // Handle training start trigger
         handleTrainingStart();
+    }
+
+    void GSViewer::drawHelpOverlay() {
+        ImGui::SetNextWindowPos(ImVec2(50, 50), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(400, 500), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowBgAlpha(0.9f);
+
+        ImGui::Begin("Keyboard Shortcuts", &show_help_,
+                     ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
+
+        ImGui::Text("Navigation:");
+        ImGui::Separator();
+        ImGui::BulletText("Left Mouse: Orbit camera / Rotate gizmo");
+        ImGui::BulletText("Right Mouse: Pan camera");
+        ImGui::BulletText("Scroll: Zoom in/out");
+        ImGui::BulletText("F: Focus on world origin");
+        ImGui::BulletText("H: Home view (look down at origin)");
+
+        ImGui::Spacing();
+        ImGui::Text("Display:");
+        ImGui::Separator();
+        ImGui::BulletText("G: Toggle grid");
+        ImGui::BulletText("C: Toggle camera frustums");
+        ImGui::BulletText("R: Toggle rotation gizmo");
+        ImGui::BulletText("Left/Right Arrow: Navigate cameras");
+        ImGui::BulletText("ESC: Close image overlay");
+        ImGui::BulletText("?: Toggle this help");
+
+        if (getSceneRenderer() && getSceneRenderer()->isGizmoVisible()) {
+            ImGui::Spacing();
+            ImGui::Text("Rotation Gizmo:");
+            ImGui::Separator();
+            ImGui::BulletText("Red ring: Rotate around X axis");
+            ImGui::BulletText("Green ring: Rotate around Y axis");
+            ImGui::BulletText("Blue ring: Rotate around Z axis");
+        }
+
+        ImGui::Spacing();
+        ImGui::Text("Press '?' to close this help");
+
+        ImGui::End();
     }
 
 } // namespace gs

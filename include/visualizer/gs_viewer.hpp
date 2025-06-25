@@ -106,6 +106,7 @@ namespace gs {
         void updateSceneBounds();
         void handleTrainingStart();
         void setupAdditionalKeyBindings();
+        void drawHelpOverlay();
 
         // Data sources
         Trainer* trainer_ = nullptr;
@@ -132,6 +133,9 @@ namespace gs {
         std::shared_ptr<CameraControlPanel> camera_panel_;
         std::shared_ptr<VisualizationPanel> viz_panel_;
         std::shared_ptr<DatasetViewerPanel> dataset_panel_;
+
+        // Help overlay
+        bool show_help_ = false;
     };
 
 } // namespace gs

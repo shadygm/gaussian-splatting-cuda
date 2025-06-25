@@ -120,6 +120,9 @@ public:
 
         glm::vec2 delta = pos - lastMousePos;
 
+        std::cout << "Viewport::rotate - delta: (" << delta.x << ", " << delta.y << ")" << std::endl;
+        std::cout << "Before: azimuth=" << azimuth << ", elevation=" << elevation << std::endl;
+
         azimuth -= delta.x * orbitSensitivity;
         elevation += delta.y * orbitSensitivity;
 
@@ -131,6 +134,8 @@ public:
 
         // Clamp elevation
         elevation = glm::clamp(elevation, -89.0f, 89.0f);
+
+        std::cout << "After: azimuth=" << azimuth << ", elevation=" << elevation << std::endl;
 
         lastMousePos = pos;
     }

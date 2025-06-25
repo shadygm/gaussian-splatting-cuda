@@ -1,5 +1,6 @@
 #include "visualizer/gui/visualization_panel.hpp"
 #include "visualizer/infinite_grid_renderer.hpp"
+#include "visualizer/scene_renderer.hpp"
 #include "visualizer/view_cube_renderer.hpp"
 #include <imgui.h>
 
@@ -25,6 +26,7 @@ namespace gs {
 
         renderGridSettings();
         renderViewCubeSettings();
+        renderGizmoSettings();
 
         ImGui::End();
     }
@@ -62,6 +64,27 @@ namespace gs {
             // - Size
             // - Position (corner selection)
             // - Opacity
+        }
+    }
+
+    void VisualizationPanel::renderGizmoSettings() {
+        ImGui::Separator();
+        ImGui::Text("Rotation Gizmo");
+        ImGui::Separator();
+
+        if (ImGui::Checkbox("Show Rotation Gizmo", &show_gizmo_)) {
+            if (scene_renderer_) {
+                scene_renderer_->setGizmoVisible(show_gizmo_);
+            }
+        }
+
+        ImGui::Text("Press 'R' to toggle gizmo");
+        ImGui::Text("Click and drag rings to rotate scene");
+
+        if (show_gizmo_) {
+            ImGui::BulletText("Red ring: Rotate around X axis");
+            ImGui::BulletText("Green ring: Rotate around Y axis");
+            ImGui::BulletText("Blue ring: Rotate around Z axis");
         }
     }
 

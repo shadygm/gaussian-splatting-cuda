@@ -7,6 +7,7 @@
 #include "visualizer/infinite_grid_renderer.hpp"
 #include "visualizer/opengl_state_manager.hpp"
 #include "visualizer/renderer.hpp"
+#include "visualizer/rotation_gizmo.hpp"
 #include "visualizer/shader_manager.hpp"
 #include "visualizer/view_cube_renderer.hpp"
 #include <glm/glm.hpp>
@@ -51,6 +52,7 @@ namespace gs {
         void renderImageOverlay(const Viewport& viewport,
                                 const torch::Tensor& image,
                                 float x, float y, float width, float height);
+        void renderGizmo(const Viewport& viewport);
 
         // Scene management
         void updateSceneBounds(const glm::vec3& center, float radius);
@@ -59,6 +61,12 @@ namespace gs {
 
         // View cube interaction
         int hitTestViewCube(const Viewport& viewport, float screen_x, float screen_y);
+
+        // Gizmo control
+        void setGizmoVisible(bool visible);
+        bool isGizmoVisible() const;
+        glm::mat4 getSceneTransform() const;
+        RotationGizmo* getRotationGizmo() { return rotation_gizmo_.get(); }
 
         // Getters for GUI interaction
         InfiniteGridRenderer* getGridRenderer() { return grid_renderer_.get(); }
@@ -73,6 +81,7 @@ namespace gs {
         std::unique_ptr<InfiniteGridRenderer> grid_renderer_;
         std::unique_ptr<ViewCubeRenderer> view_cube_renderer_;
         std::unique_ptr<CameraFrustumRenderer> camera_renderer_;
+        std::unique_ptr<RotationGizmo> rotation_gizmo_;
         std::shared_ptr<ScreenQuadRenderer> screen_renderer_;
 
         // Scene info

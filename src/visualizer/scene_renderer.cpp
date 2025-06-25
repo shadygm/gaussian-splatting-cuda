@@ -78,6 +78,16 @@ namespace gs {
             camera_renderer_.reset();
         }
 
+        // Initialize rotation gizmo
+        std::cout << "Initializing rotation gizmo..." << std::endl;
+        rotation_gizmo_ = std::make_unique<RotationGizmo>();
+        if (!rotation_gizmo_->init(shader_path)) {
+            std::cerr << "Failed to initialize rotation gizmo" << std::endl;
+            rotation_gizmo_.reset();
+        } else {
+            std::cout << "Rotation gizmo initialized successfully" << std::endl;
+        }
+
         initialized_ = true;
         return true;
     }
@@ -134,6 +144,22 @@ namespace gs {
             return;
         }
 
+        // Get the scene transform from gizmo
+        glm::mat4 scene_transform = getSceneTransform();
+
+        // Debug output - print transform whenever it changes
+        static glm::mat4 last_transform = glm::mat4(1.0f);
+        if (scene_transform != last_transform) {
+            std::cout << "Scene transform changed:\n";
+            for (int i = 0; i < 4; ++i) {
+                std::cout << scene_transform[i][0] << " " << scene_transform[i][1]
+                          << " " << scene_transform[i][2] << " " << scene_transform[i][3] << "\n";
+            }
+            last_transform = scene_transform;
+        }
+
+        // Pass transform to camera renderer
+        camera_renderer_->setSceneTransform(scene_transform);
         camera_renderer_->render(viewport, highlight_index);
     }
 
@@ -155,6 +181,11 @@ namespace gs {
         opengl_to_colmap[2][2] = -1.0f; // Flip Z
 
         glm::mat4 view_colmap = opengl_to_colmap * view_opengl;
+
+        // Apply scene transform (inverse because we're transforming the view)
+        glm::mat4 scene_transform = getSceneTransform();
+        view_colmap = view_colmap * glm::inverse(scene_transform);
+
         glm::mat3 R_w2c = glm::mat3(view_colmap);
         glm::vec3 t_w2c = glm::vec3(view_colmap[3]);
 
@@ -186,6 +217,10 @@ namespace gs {
         RenderOutput output;
         {
             std::lock_guard<std::mutex> lock(splat_mutex);
+
+            // Instead of modifying the model directly, we'll transform the camera
+            // The effect is the same - rotating the scene is equivalent to
+            // rotating the camera in the opposite direction
             output = gs::rasterize(
                 cam,
                 trainer->get_strategy().get_model(),
@@ -245,6 +280,27 @@ namespace gs {
         // For now this is a placeholder
     }
 
+    void SceneRenderer::renderGizmo(const Viewport& viewport) {
+        if (rotation_gizmo_ && rotation_gizmo_->isVisible()) {
+            // Update gizmo position and size based on scene
+            if (scene_bounds_valid_) {
+                rotation_gizmo_->setPosition(scene_center_);
+
+                // Calculate appropriate gizmo size based on viewport distance
+                glm::vec3 cam_pos = viewport.getCameraPosition();
+                float distance_to_center = glm::length(cam_pos - scene_center_);
+
+                // Make gizmo size relative to view distance, not scene size
+                float gizmo_radius = distance_to_center * 0.1f;      // 10% of view distance
+                gizmo_radius = glm::clamp(gizmo_radius, 0.1f, 3.0f); // Keep it reasonable
+
+                rotation_gizmo_->setRadius(gizmo_radius);
+            }
+
+            rotation_gizmo_->render(viewport);
+        }
+    }
+
     int SceneRenderer::hitTestViewCube(const Viewport& viewport, float screen_x, float screen_y) {
         if (!view_cube_renderer_) {
             return -1;
@@ -257,6 +313,23 @@ namespace gs {
         float gl_y = viewport.windowSize.y - screen_y;
 
         return view_cube_renderer_->hitTest(viewport, screen_x, gl_y, x, y, view_cube_size_);
+    }
+
+    void SceneRenderer::setGizmoVisible(bool visible) {
+        if (rotation_gizmo_) {
+            rotation_gizmo_->setVisible(visible);
+        }
+    }
+
+    bool SceneRenderer::isGizmoVisible() const {
+        return rotation_gizmo_ && rotation_gizmo_->isVisible();
+    }
+
+    glm::mat4 SceneRenderer::getSceneTransform() const {
+        if (rotation_gizmo_) {
+            return rotation_gizmo_->getTransformMatrix();
+        }
+        return glm::mat4(1.0f);
     }
 
 } // namespace gs

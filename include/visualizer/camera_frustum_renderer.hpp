@@ -25,6 +25,7 @@ namespace gs {
         void setShowTestCameras(bool show) { show_test_ = show; }
         void setFrustumScale(float scale) { frustum_scale_ = scale; }
         float getFrustumScale() const { return frustum_scale_; }
+        void setSceneTransform(const glm::mat4& transform) { scene_transform_ = transform; }
 
     private:
         void createFrustumGeometry();
@@ -61,6 +62,7 @@ namespace gs {
 
         glm::vec3 scene_center_ = glm::vec3(0.0f);
         float scene_radius_ = 1.0f;
+        glm::mat4 scene_transform_{1.0f};
 
         bool initialized_ = false;
         bool auto_scale_ = true;

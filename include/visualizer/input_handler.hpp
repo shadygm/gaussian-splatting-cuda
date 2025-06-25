@@ -42,6 +42,10 @@ namespace gs {
             view_cube_hit_test_ = hitTest;
         }
 
+        void setGizmoHitTest(std::function<int(double, double)> hitTest) {
+            gizmo_hit_test_ = hitTest;
+        }
+
         // Check if GUI is capturing input
         void setGUIActiveCheck(std::function<bool()> check) {
             gui_active_check_ = check;
@@ -54,9 +58,20 @@ namespace gs {
 
         // Get key binding descriptions for help display
         std::vector<std::pair<std::string, std::string>> getKeyBindings() const;
+        MouseMoveCallback getMouseMoveCallback() const { return mouse_move_callback_; }
+        MouseButtonCallback getMouseButtonCallback(int button) const {
+            auto it = mouse_button_callbacks_.find(button);
+            return (it != mouse_button_callbacks_.end()) ? it->second : nullptr;
+        }
 
         // Default camera controls
         void setupDefaultCameraControls();
+
+        // Gizmo dragging state
+        bool isGizmoDragging() const { return gizmo_dragging_; }
+
+        bool isDragging() const { return dragging_; }
+        int getDragButton() const { return drag_button_; }
 
     private:
         static void mouseButtonCallbackStatic(GLFWwindow* window, int button, int action, int mods);
@@ -72,6 +87,7 @@ namespace gs {
         MouseMoveCallback mouse_move_callback_;
         ScrollCallback scroll_callback_;
         std::function<int(double, double)> view_cube_hit_test_;
+        std::function<int(double, double)> gizmo_hit_test_;
 
         // Key bindings
         std::unordered_map<uint32_t, KeyBinding> key_bindings_;
@@ -84,6 +100,9 @@ namespace gs {
         double last_y_ = 0.0;
         bool dragging_ = false;
         int drag_button_ = -1;
+
+        // Gizmo state
+        bool gizmo_dragging_ = false;
 
         // Static instance for callbacks
         static InputHandler* instance_;
