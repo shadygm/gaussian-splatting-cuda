@@ -69,22 +69,41 @@ namespace gs {
 
     void VisualizationPanel::renderGizmoSettings() {
         ImGui::Separator();
-        ImGui::Text("Rotation Gizmo");
+        ImGui::Text("Transform Gizmos");
         ImGui::Separator();
 
-        if (ImGui::Checkbox("Show Rotation Gizmo", &show_gizmo_)) {
-            if (scene_renderer_) {
-                scene_renderer_->setGizmoVisible(show_gizmo_);
+        if (scene_renderer_) {
+            const char* gizmo_modes[] = { "None", "Rotation", "Translation" };
+            int current_mode = static_cast<int>(scene_renderer_->getGizmoMode());
+
+            if (ImGui::Combo("Gizmo Mode", &current_mode, gizmo_modes, 3)) {
+                scene_renderer_->setGizmoMode(static_cast<SceneRenderer::GizmoMode>(current_mode));
             }
-        }
 
-        ImGui::Text("Press 'R' to toggle gizmo");
-        ImGui::Text("Click and drag rings to rotate scene");
+            ImGui::Text("Keyboard shortcuts:");
+            ImGui::BulletText("R: Toggle rotation gizmo");
+            ImGui::BulletText("T: Toggle translation gizmo");
 
-        if (show_gizmo_) {
-            ImGui::BulletText("Red ring: Rotate around X axis");
-            ImGui::BulletText("Green ring: Rotate around Y axis");
-            ImGui::BulletText("Blue ring: Rotate around Z axis");
+            auto mode = scene_renderer_->getGizmoMode();
+            if (mode == SceneRenderer::GizmoMode::ROTATION) {
+                ImGui::Spacing();
+                ImGui::Text("Rotation controls:");
+                ImGui::BulletText("Red ring: Rotate around X axis");
+                ImGui::BulletText("Green ring: Rotate around Y axis");
+                ImGui::BulletText("Blue ring: Rotate around Z axis");
+            } else if (mode == SceneRenderer::GizmoMode::TRANSLATION) {
+                ImGui::Spacing();
+                ImGui::Text("Translation controls:");
+                ImGui::BulletText("Red arrow: Move along X axis");
+                ImGui::BulletText("Green arrow: Move along Y axis");
+                ImGui::BulletText("Blue arrow: Move along Z axis");
+                ImGui::BulletText("Yellow square: Move in XY plane");
+                ImGui::BulletText("Magenta square: Move in XZ plane");
+                ImGui::BulletText("Cyan square: Move in YZ plane");
+                ImGui::BulletText("Center sphere: Free movement");
+            }
+        } else {
+            ImGui::Text("Scene renderer not available");
         }
     }
 

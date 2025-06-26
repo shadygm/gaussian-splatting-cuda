@@ -88,6 +88,16 @@ namespace gs {
             std::cout << "Rotation gizmo initialized successfully" << std::endl;
         }
 
+        // Initialize translation gizmo
+        std::cout << "Initializing translation gizmo..." << std::endl;
+        translation_gizmo_ = std::make_unique<TranslationGizmo>();
+        if (!translation_gizmo_->init(shader_path)) {
+            std::cerr << "Failed to initialize translation gizmo" << std::endl;
+            translation_gizmo_.reset();
+        } else {
+            std::cout << "Translation gizmo initialized successfully" << std::endl;
+        }
+
         initialized_ = true;
         return true;
     }
@@ -96,6 +106,9 @@ namespace gs {
         scene_center_ = center;
         scene_radius_ = radius;
         scene_bounds_valid_ = true;
+
+        // Update gizmo positions to match scene center
+        updateGizmoPosition(center);
     }
 
     void SceneRenderer::setCameras(const std::vector<std::shared_ptr<Camera>>& cameras,
@@ -144,7 +157,7 @@ namespace gs {
             return;
         }
 
-        // Get the scene transform from gizmo
+        // Get the combined scene transform from both gizmos
         glm::mat4 scene_transform = getSceneTransform();
 
         // Debug output - print transform whenever it changes
@@ -182,7 +195,7 @@ namespace gs {
 
         glm::mat4 view_colmap = opengl_to_colmap * view_opengl;
 
-        // Apply scene transform (inverse because we're transforming the view)
+        // Apply combined scene transform (inverse because we're transforming the view)
         glm::mat4 scene_transform = getSceneTransform();
         view_colmap = view_colmap * glm::inverse(scene_transform);
 
@@ -281,14 +294,20 @@ namespace gs {
     }
 
     void SceneRenderer::renderGizmo(const Viewport& viewport) {
-        if (rotation_gizmo_ && rotation_gizmo_->isVisible()) {
+        if (gizmo_mode_ == GizmoMode::ROTATION && rotation_gizmo_ && rotation_gizmo_->isVisible()) {
             // Update gizmo position and size based on scene
             if (scene_bounds_valid_) {
-                rotation_gizmo_->setPosition(scene_center_);
+                // Rotation gizmo stays at the transformed scene center
+                glm::vec3 gizmo_pos = scene_center_;
+                if (translation_gizmo_) {
+                    // Add translation offset
+                    gizmo_pos += translation_gizmo_->getTranslation();
+                }
+                rotation_gizmo_->setPosition(gizmo_pos);
 
                 // Calculate appropriate gizmo size based on viewport distance
                 glm::vec3 cam_pos = viewport.getCameraPosition();
-                float distance_to_center = glm::length(cam_pos - scene_center_);
+                float distance_to_center = glm::length(cam_pos - gizmo_pos);
 
                 // Make gizmo size relative to view distance, not scene size
                 float gizmo_radius = distance_to_center * 0.1f;      // 10% of view distance
@@ -298,6 +317,25 @@ namespace gs {
             }
 
             rotation_gizmo_->render(viewport);
+        } else if (gizmo_mode_ == GizmoMode::TRANSLATION && translation_gizmo_ && translation_gizmo_->isVisible()) {
+            // Update gizmo position and size based on scene
+            if (scene_bounds_valid_) {
+                // Translation gizmo follows the accumulated translation
+                translation_gizmo_->setPosition(scene_center_);
+
+                // Calculate appropriate gizmo size based on viewport distance
+                glm::vec3 cam_pos = viewport.getCameraPosition();
+                glm::vec3 gizmo_pos = translation_gizmo_->getPosition();
+                float distance_to_gizmo = glm::length(cam_pos - gizmo_pos);
+
+                // Make gizmo size relative to view distance
+                float gizmo_scale = distance_to_gizmo * 0.1f;        // 10% of view distance
+                gizmo_scale = glm::clamp(gizmo_scale, 0.1f, 3.0f);   // Keep it reasonable
+
+                translation_gizmo_->setScale(gizmo_scale);
+            }
+
+            translation_gizmo_->render(viewport);
         }
     }
 
@@ -315,21 +353,68 @@ namespace gs {
         return view_cube_renderer_->hitTest(viewport, screen_x, gl_y, x, y, view_cube_size_);
     }
 
+    void SceneRenderer::setGizmoMode(GizmoMode mode) {
+        gizmo_mode_ = mode;
+
+        // Hide all gizmos first
+        if (rotation_gizmo_) rotation_gizmo_->setVisible(false);
+        if (translation_gizmo_) translation_gizmo_->setVisible(false);
+
+        // Show the selected gizmo
+        switch (mode) {
+        case GizmoMode::ROTATION:
+            if (rotation_gizmo_) rotation_gizmo_->setVisible(true);
+            break;
+        case GizmoMode::TRANSLATION:
+            if (translation_gizmo_) translation_gizmo_->setVisible(true);
+            break;
+        case GizmoMode::NONE:
+        default:
+            break;
+        }
+    }
+
     void SceneRenderer::setGizmoVisible(bool visible) {
-        if (rotation_gizmo_) {
+        if (gizmo_mode_ == GizmoMode::ROTATION && rotation_gizmo_) {
             rotation_gizmo_->setVisible(visible);
+        } else if (gizmo_mode_ == GizmoMode::TRANSLATION && translation_gizmo_) {
+            translation_gizmo_->setVisible(visible);
         }
     }
 
     bool SceneRenderer::isGizmoVisible() const {
-        return rotation_gizmo_ && rotation_gizmo_->isVisible();
+        if (gizmo_mode_ == GizmoMode::ROTATION) {
+            return rotation_gizmo_ && rotation_gizmo_->isVisible();
+        } else if (gizmo_mode_ == GizmoMode::TRANSLATION) {
+            return translation_gizmo_ && translation_gizmo_->isVisible();
+        }
+        return false;
     }
 
     glm::mat4 SceneRenderer::getSceneTransform() const {
+        glm::mat4 rotation_transform(1.0f);
+        glm::mat4 translation_transform(1.0f);
+
         if (rotation_gizmo_) {
-            return rotation_gizmo_->getTransformMatrix();
+            rotation_transform = rotation_gizmo_->getTransformMatrix();
         }
-        return glm::mat4(1.0f);
+
+        if (translation_gizmo_) {
+            translation_transform = translation_gizmo_->getTransformMatrix();
+        }
+
+        // Combine transforms: first translate, then rotate
+        return rotation_transform * translation_transform;
+    }
+
+    void SceneRenderer::updateGizmoPosition(const glm::vec3& position) {
+        scene_center_ = position;
+        if (rotation_gizmo_) {
+            rotation_gizmo_->setPosition(position);
+        }
+        if (translation_gizmo_) {
+            translation_gizmo_->setPosition(position);
+        }
     }
 
 } // namespace gs

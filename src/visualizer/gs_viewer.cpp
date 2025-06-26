@@ -309,44 +309,98 @@ namespace gs {
         setupAdditionalKeyBindings();
 
         // Connect gizmo hit test and interaction
-        if (getSceneRenderer() && getSceneRenderer()->getRotationGizmo()) {
-            // Set gizmo hit test
+        if (getSceneRenderer()) {
+            // Set gizmo hit test for both rotation and translation
             getInputHandler()->setGizmoHitTest([this](double x, double y) -> int {
-                auto gizmo = getSceneRenderer()->getRotationGizmo();
-                if (gizmo && gizmo->isVisible()) {
-                    auto axis = gizmo->hitTest(getViewport(), x, y);
-                    if (axis != RotationGizmo::Axis::NONE) {
-                        std::cout << "Gizmo hit! Starting rotation on axis " << static_cast<int>(axis) << std::endl;
-                        gizmo->startRotation(axis, x, y, getViewport());
-                        return static_cast<int>(axis);
+                auto renderer = getSceneRenderer();
+                if (!renderer) return -1;
+
+                // Check rotation gizmo
+                if (renderer->getGizmoMode() == SceneRenderer::GizmoMode::ROTATION) {
+                    auto gizmo = renderer->getRotationGizmo();
+                    if (gizmo && gizmo->isVisible()) {
+                        auto axis = gizmo->hitTest(getViewport(), x, y);
+                        if (axis != RotationGizmo::Axis::NONE) {
+                            std::cout << "Rotation gizmo hit! Starting rotation on axis " << static_cast<int>(axis) << std::endl;
+                            gizmo->startRotation(axis, x, y, getViewport());
+                            return static_cast<int>(axis);
+                        }
                     }
                 }
+                // Check translation gizmo
+                else if (renderer->getGizmoMode() == SceneRenderer::GizmoMode::TRANSLATION) {
+                    auto gizmo = renderer->getTranslationGizmo();
+                    if (gizmo && gizmo->isVisible()) {
+                        auto axis = gizmo->hitTest(getViewport(), x, y);
+                        if (axis != TranslationGizmo::Axis::NONE) {
+                            std::cout << "Translation gizmo hit! Starting translation on axis " << static_cast<int>(axis) << std::endl;
+                            gizmo->startTranslation(axis, x, y, getViewport());
+                            return static_cast<int>(axis);
+                        }
+                    }
+                }
+
                 return -1;
             });
 
-            // Update the existing mouse move callback to handle gizmo
+            // Update the existing mouse move callback to handle both gizmos
             getInputHandler()->setMouseMoveCallback([this](double x, double y, double dx, double dy) {
-                auto gizmo = getSceneRenderer()->getRotationGizmo();
+                auto renderer = getSceneRenderer();
+                if (!renderer) return;
 
-                // Handle gizmo rotation if active
-                if (getInputHandler()->isGizmoDragging() && gizmo && gizmo->isRotating()) {
-                    gizmo->updateRotation(x, y, getViewport());
-                    return; // Don't process camera movement when dragging gizmo
+                // Handle rotation gizmo
+                if (getInputHandler()->isGizmoDragging() &&
+                    renderer->getGizmoMode() == SceneRenderer::GizmoMode::ROTATION) {
+                    auto gizmo = renderer->getRotationGizmo();
+                    if (gizmo && gizmo->isRotating()) {
+                        gizmo->updateRotation(x, y, getViewport());
+                        return;
+                    }
+                }
+                // Handle translation gizmo
+                else if (getInputHandler()->isGizmoDragging() &&
+                         renderer->getGizmoMode() == SceneRenderer::GizmoMode::TRANSLATION) {
+                    auto gizmo = renderer->getTranslationGizmo();
+                    if (gizmo && gizmo->isTranslating()) {
+                        gizmo->updateTranslation(x, y, getViewport());
+
+                        // Update gizmo position as it moves
+                        glm::vec3 new_pos = gizmo->getPosition();
+                        renderer->updateGizmoPosition(new_pos);
+                        return;
+                    }
                 }
 
                 // Let the default handler process camera movement
             });
 
-            // Make sure gizmo rotation ends properly
-            // This is important - we need to add this to the existing mouse button callback
+            // Make sure gizmo operations end properly
             auto originalButtonCallback = getInputHandler()->getMouseButtonCallback(GLFW_MOUSE_BUTTON_LEFT);
             getInputHandler()->addMouseButtonCallback(GLFW_MOUSE_BUTTON_LEFT,
                                                       [this, originalButtonCallback](int button, int action, double x, double y) -> bool {
                                                           if (action == GLFW_RELEASE) {
-                                                              auto gizmo = getSceneRenderer()->getRotationGizmo();
-                                                              if (gizmo && gizmo->isRotating()) {
-                                                                  std::cout << "Ending gizmo rotation" << std::endl;
-                                                                  gizmo->endRotation();
+                                                              auto renderer = getSceneRenderer();
+                                                              if (renderer) {
+                                                                  // End rotation
+                                                                  if (renderer->getGizmoMode() == SceneRenderer::GizmoMode::ROTATION) {
+                                                                      auto gizmo = renderer->getRotationGizmo();
+                                                                      if (gizmo && gizmo->isRotating()) {
+                                                                          std::cout << "Ending rotation" << std::endl;
+                                                                          gizmo->endRotation();
+                                                                      }
+                                                                  }
+                                                                  // End translation
+                                                                  else if (renderer->getGizmoMode() == SceneRenderer::GizmoMode::TRANSLATION) {
+                                                                      auto gizmo = renderer->getTranslationGizmo();
+                                                                      if (gizmo && gizmo->isTranslating()) {
+                                                                          std::cout << "Ending translation" << std::endl;
+                                                                          gizmo->endTranslation();
+
+                                                                          // Update final position
+                                                                          glm::vec3 final_pos = gizmo->getPosition();
+                                                                          renderer->updateGizmoPosition(final_pos);
+                                                                      }
+                                                                  }
                                                               }
                                                           }
                                                           return false; // Let other handlers process too
@@ -449,12 +503,33 @@ namespace gs {
         input->addKeyBinding(
             GLFW_KEY_R, [this]() {
                 if (getSceneRenderer()) {
-                    bool visible = getSceneRenderer()->isGizmoVisible();
-                    getSceneRenderer()->setGizmoVisible(!visible);
-                    std::cout << "Rotation gizmo " << (!visible ? "enabled" : "disabled") << std::endl;
+                    auto current_mode = getSceneRenderer()->getGizmoMode();
+                    if (current_mode == SceneRenderer::GizmoMode::ROTATION) {
+                        getSceneRenderer()->setGizmoMode(SceneRenderer::GizmoMode::NONE);
+                        std::cout << "Gizmos disabled" << std::endl;
+                    } else {
+                        getSceneRenderer()->setGizmoMode(SceneRenderer::GizmoMode::ROTATION);
+                        std::cout << "Rotation gizmo enabled" << std::endl;
+                    }
                 }
             },
             "Toggle rotation gizmo");
+
+        // Toggle translation gizmo
+        input->addKeyBinding(
+            GLFW_KEY_T, [this]() {
+                if (getSceneRenderer()) {
+                    auto current_mode = getSceneRenderer()->getGizmoMode();
+                    if (current_mode == SceneRenderer::GizmoMode::TRANSLATION) {
+                        getSceneRenderer()->setGizmoMode(SceneRenderer::GizmoMode::NONE);
+                        std::cout << "Gizmos disabled" << std::endl;
+                    } else {
+                        getSceneRenderer()->setGizmoMode(SceneRenderer::GizmoMode::TRANSLATION);
+                        std::cout << "Translation gizmo enabled" << std::endl;
+                    }
+                }
+            },
+            "Toggle translation gizmo");
 
         // Navigation keys for dataset
         input->addKeyBinding(
@@ -545,17 +620,8 @@ namespace gs {
                 if (getSceneRenderer()) {
                     getSceneRenderer()->updateSceneBounds(scene_center_, scene_radius_);
 
-                    // Update rotation gizmo position
-                    if (getSceneRenderer()->getRotationGizmo()) {
-                        getSceneRenderer()->getRotationGizmo()->setPosition(scene_center_);
-
-                        // Only print gizmo info on first initialization
-                        if (!scene_bounds_initialized_) {
-                            std::cout << "Gizmo positioned at scene center: ("
-                                      << scene_center_.x << ", " << scene_center_.y << ", " << scene_center_.z
-                                      << ")" << std::endl;
-                        }
-                    }
+                    // Update gizmo positions - they should follow the scene center
+                    getSceneRenderer()->updateGizmoPosition(scene_center_);
 
                     // Reset camera frustum transform to identity initially
                     // This ensures cameras and point cloud start in sync
@@ -678,17 +744,32 @@ namespace gs {
         ImGui::BulletText("G: Toggle grid");
         ImGui::BulletText("C: Toggle camera frustums");
         ImGui::BulletText("R: Toggle rotation gizmo");
+        ImGui::BulletText("T: Toggle translation gizmo");
         ImGui::BulletText("Left/Right Arrow: Navigate cameras");
         ImGui::BulletText("ESC: Close image overlay");
         ImGui::BulletText("?: Toggle this help");
 
-        if (getSceneRenderer() && getSceneRenderer()->isGizmoVisible()) {
-            ImGui::Spacing();
-            ImGui::Text("Rotation Gizmo:");
-            ImGui::Separator();
-            ImGui::BulletText("Red ring: Rotate around X axis");
-            ImGui::BulletText("Green ring: Rotate around Y axis");
-            ImGui::BulletText("Blue ring: Rotate around Z axis");
+        if (getSceneRenderer()) {
+            auto mode = getSceneRenderer()->getGizmoMode();
+            if (mode == SceneRenderer::GizmoMode::ROTATION) {
+                ImGui::Spacing();
+                ImGui::Text("Rotation Gizmo:");
+                ImGui::Separator();
+                ImGui::BulletText("Red ring: Rotate around X axis");
+                ImGui::BulletText("Green ring: Rotate around Y axis");
+                ImGui::BulletText("Blue ring: Rotate around Z axis");
+            } else if (mode == SceneRenderer::GizmoMode::TRANSLATION) {
+                ImGui::Spacing();
+                ImGui::Text("Translation Gizmo:");
+                ImGui::Separator();
+                ImGui::BulletText("Red arrow: Move along X axis");
+                ImGui::BulletText("Green arrow: Move along Y axis");
+                ImGui::BulletText("Blue arrow: Move along Z axis");
+                ImGui::BulletText("Yellow square: Move in XY plane");
+                ImGui::BulletText("Magenta square: Move in XZ plane");
+                ImGui::BulletText("Cyan square: Move in YZ plane");
+                ImGui::BulletText("Center sphere: Free movement");
+            }
         }
 
         ImGui::Spacing();

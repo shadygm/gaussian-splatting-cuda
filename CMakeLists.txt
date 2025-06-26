@@ -209,6 +209,7 @@ set(VISUALIZER_SOURCES
         src/visualizer/input_handler.cpp
         src/visualizer/gs_viewer.cpp
         src/visualizer/rotation_gizmo.cpp
+        src/visualizer/translation_gizmo.cpp
 )
 
 # Add CUDA interop source only if available

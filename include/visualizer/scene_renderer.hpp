@@ -8,6 +8,7 @@
 #include "visualizer/opengl_state_manager.hpp"
 #include "visualizer/renderer.hpp"
 #include "visualizer/rotation_gizmo.hpp"
+#include "visualizer/translation_gizmo.hpp"
 #include "visualizer/shader_manager.hpp"
 #include "visualizer/view_cube_renderer.hpp"
 #include <glm/glm.hpp>
@@ -19,6 +20,12 @@ namespace gs {
     // Encapsulates all scene rendering logic
     class SceneRenderer {
     public:
+        enum class GizmoMode {
+            NONE,
+            ROTATION,
+            TRANSLATION
+        };
+
         struct RenderSettings {
             bool show_grid;
             bool show_view_cube;
@@ -63,10 +70,14 @@ namespace gs {
         int hitTestViewCube(const Viewport& viewport, float screen_x, float screen_y);
 
         // Gizmo control
+        void setGizmoMode(GizmoMode mode);
+        GizmoMode getGizmoMode() const { return gizmo_mode_; }
         void setGizmoVisible(bool visible);
         bool isGizmoVisible() const;
         glm::mat4 getSceneTransform() const;
         RotationGizmo* getRotationGizmo() { return rotation_gizmo_.get(); }
+        TranslationGizmo* getTranslationGizmo() { return translation_gizmo_.get(); }
+        void updateGizmoPosition(const glm::vec3& position);
 
         // Getters for GUI interaction
         InfiniteGridRenderer* getGridRenderer() { return grid_renderer_.get(); }
@@ -82,6 +93,8 @@ namespace gs {
         std::unique_ptr<ViewCubeRenderer> view_cube_renderer_;
         std::unique_ptr<CameraFrustumRenderer> camera_renderer_;
         std::unique_ptr<RotationGizmo> rotation_gizmo_;
+        std::unique_ptr<TranslationGizmo> translation_gizmo_;
+        GizmoMode gizmo_mode_ = GizmoMode::NONE;
         std::shared_ptr<ScreenQuadRenderer> screen_renderer_;
 
         // Scene info

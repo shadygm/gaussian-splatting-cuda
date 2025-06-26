@@ -32,7 +32,6 @@ namespace gs {
         SceneRenderer* scene_renderer_ = nullptr;
         bool* show_grid_;
         bool* show_view_cube_;
-        bool show_gizmo_ = false;
 
         float grid_opacity_ = 1.0f;
     };
