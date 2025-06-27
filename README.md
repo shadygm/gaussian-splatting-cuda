@@ -316,6 +316,8 @@ If you use this software in your research, please cite the original work:
 
 ## License
 
+Code on this Branch is committed under GPLv3 license. Gsplat rasterizer is Apache 2.0 licensed. Modifcations to gsplat will be GPLv3 licensed!
+
 See LICENSE file for details.
 
 ---
