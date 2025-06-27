@@ -329,8 +329,8 @@ namespace gs {
                 float distance_to_gizmo = glm::length(cam_pos - gizmo_pos);
 
                 // Make gizmo size relative to view distance
-                float gizmo_scale = distance_to_gizmo * 0.1f;        // 10% of view distance
-                gizmo_scale = glm::clamp(gizmo_scale, 0.1f, 3.0f);   // Keep it reasonable
+                float gizmo_scale = distance_to_gizmo * 0.1f;      // 10% of view distance
+                gizmo_scale = glm::clamp(gizmo_scale, 0.1f, 3.0f); // Keep it reasonable
 
                 translation_gizmo_->setScale(gizmo_scale);
             }
@@ -357,16 +357,20 @@ namespace gs {
         gizmo_mode_ = mode;
 
         // Hide all gizmos first
-        if (rotation_gizmo_) rotation_gizmo_->setVisible(false);
-        if (translation_gizmo_) translation_gizmo_->setVisible(false);
+        if (rotation_gizmo_)
+            rotation_gizmo_->setVisible(false);
+        if (translation_gizmo_)
+            translation_gizmo_->setVisible(false);
 
         // Show the selected gizmo
         switch (mode) {
         case GizmoMode::ROTATION:
-            if (rotation_gizmo_) rotation_gizmo_->setVisible(true);
+            if (rotation_gizmo_)
+                rotation_gizmo_->setVisible(true);
             break;
         case GizmoMode::TRANSLATION:
-            if (translation_gizmo_) translation_gizmo_->setVisible(true);
+            if (translation_gizmo_)
+                translation_gizmo_->setVisible(true);
             break;
         case GizmoMode::NONE:
         default:

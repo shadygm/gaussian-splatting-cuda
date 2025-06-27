@@ -245,8 +245,7 @@ target_link_libraries(gaussian_visualizer
         glad::glad
         glfw
         glm::glm
-	        imgui::imgui
-        imgui
+        imgui::imgui
         gsplat_backend
 )
 

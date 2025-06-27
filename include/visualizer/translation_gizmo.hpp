@@ -63,7 +63,7 @@ namespace gs {
         // Geometry for planes
         GLuint vao_planes_[3];
         GLuint vbo_planes_[3];
-        
+
         // Center sphere
         GLuint vao_sphere_;
         GLuint vbo_sphere_;
@@ -80,7 +80,7 @@ namespace gs {
         glm::vec3 current_translation_{0.0f};
         glm::vec3 accumulated_translation_{0.0f};
         glm::vec3 base_position_{0.0f};
-        
+
         // Drag plane for constrained movement
         glm::vec3 drag_plane_normal_{0.0f};
         float drag_plane_distance_ = 0.0f;
@@ -96,7 +96,7 @@ namespace gs {
         // Colors
         const glm::vec3 axis_colors_[3] = {
             glm::vec3(1.0f, 0.2f, 0.2f), // X - Red
-            glm::vec3(0.2f, 1.0f, 0.2f), // Y - Green  
+            glm::vec3(0.2f, 1.0f, 0.2f), // Y - Green
             glm::vec3(0.2f, 0.2f, 1.0f)  // Z - Blue
         };
 

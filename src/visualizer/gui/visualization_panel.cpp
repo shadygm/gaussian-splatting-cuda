@@ -73,7 +73,7 @@ namespace gs {
         ImGui::Separator();
 
         if (scene_renderer_) {
-            const char* gizmo_modes[] = { "None", "Rotation", "Translation" };
+            const char* gizmo_modes[] = {"None", "Rotation", "Translation"};
             int current_mode = static_cast<int>(scene_renderer_->getGizmoMode());
 
             if (ImGui::Combo("Gizmo Mode", &current_mode, gizmo_modes, 3)) {

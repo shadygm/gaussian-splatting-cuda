@@ -8,8 +8,8 @@
 #include "visualizer/opengl_state_manager.hpp"
 #include "visualizer/renderer.hpp"
 #include "visualizer/rotation_gizmo.hpp"
-#include "visualizer/translation_gizmo.hpp"
 #include "visualizer/shader_manager.hpp"
+#include "visualizer/translation_gizmo.hpp"
 #include "visualizer/view_cube_renderer.hpp"
 #include <glm/glm.hpp>
 #include <memory>

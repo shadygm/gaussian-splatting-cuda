@@ -118,6 +118,16 @@ namespace gs {
         std::cout << "InputHandler::handleMouseButton - button=" << button
                   << ", action=" << action << ", pos=(" << x << ", " << y << ")" << std::endl;
 
+        // First, call any registered callbacks for this button
+        auto it = mouse_button_callbacks_.find(button);
+        if (it != mouse_button_callbacks_.end() && it->second) {
+            bool handled = it->second(button, action, x, y);
+            if (handled) {
+                return; // Callback handled the event
+            }
+        }
+
+        // Default handling if no callback handled it
         if (button == GLFW_MOUSE_BUTTON_LEFT) {
             if (action == GLFW_PRESS) {
                 // Check gizmo first

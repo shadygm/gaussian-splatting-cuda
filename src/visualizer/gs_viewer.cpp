@@ -313,7 +313,8 @@ namespace gs {
             // Set gizmo hit test for both rotation and translation
             getInputHandler()->setGizmoHitTest([this](double x, double y) -> int {
                 auto renderer = getSceneRenderer();
-                if (!renderer) return -1;
+                if (!renderer)
+                    return -1;
 
                 // Check rotation gizmo
                 if (renderer->getGizmoMode() == SceneRenderer::GizmoMode::ROTATION) {
@@ -346,7 +347,8 @@ namespace gs {
             // Update the existing mouse move callback to handle both gizmos
             getInputHandler()->setMouseMoveCallback([this](double x, double y, double dx, double dy) {
                 auto renderer = getSceneRenderer();
-                if (!renderer) return;
+                if (!renderer)
+                    return;
 
                 // Handle rotation gizmo
                 if (getInputHandler()->isGizmoDragging() &&
@@ -375,9 +377,8 @@ namespace gs {
             });
 
             // Make sure gizmo operations end properly
-            auto originalButtonCallback = getInputHandler()->getMouseButtonCallback(GLFW_MOUSE_BUTTON_LEFT);
             getInputHandler()->addMouseButtonCallback(GLFW_MOUSE_BUTTON_LEFT,
-                                                      [this, originalButtonCallback](int button, int action, double x, double y) -> bool {
+                                                      [this](int button, int action, double x, double y) -> bool {
                                                           if (action == GLFW_RELEASE) {
                                                               auto renderer = getSceneRenderer();
                                                               if (renderer) {

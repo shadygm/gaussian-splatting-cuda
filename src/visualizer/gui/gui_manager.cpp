@@ -1,8 +1,8 @@
 #include "visualizer/gui/gui_manager.hpp"
 #include <algorithm>
-#include <backends/imgui_impl_glfw.h>
-#include <backends/imgui_impl_opengl3.h>
 #include <filesystem>
+#include <imgui_impl_glfw.h>
+#include <imgui_impl_opengl3.h>
 #include <iostream>
 
 namespace gs {

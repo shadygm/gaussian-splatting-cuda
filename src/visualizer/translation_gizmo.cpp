@@ -249,7 +249,7 @@ namespace gs {
         float distance_to_cam = glm::length(cam_pos - current_pos);
 
         // Keep gizmo size relatively constant on screen - INCREASED SCALE
-        float screen_space_scale = distance_to_cam * 0.15f;  // Increased from 0.1f to 0.15f
+        float screen_space_scale = distance_to_cam * 0.15f; // Increased from 0.1f to 0.15f
         float dynamic_scale = scale_ * screen_space_scale / 10.0f;
         dynamic_scale = glm::clamp(dynamic_scale, scale_ * 1.2f, scale_ * 2.0f); // Increased minimum
 
@@ -261,10 +261,11 @@ namespace gs {
         gizmo_shader_->set_uniform("projection", projection);
 
         // Render arrows with thicker lines
-        glLineWidth(6.0f);  // Increased from default
+        glLineWidth(6.0f); // Increased from default
         for (int axis = 0; axis < 3; ++axis) {
             glm::vec3 color = (translating_ && active_axis_ == static_cast<Axis>(axis))
-                                  ? hover_color_ : axis_colors_[axis];
+                                  ? hover_color_
+                                  : axis_colors_[axis];
 
             float alpha = (translating_ && active_axis_ != static_cast<Axis>(axis)) ? 0.3f : 1.0f;
 
@@ -280,10 +281,12 @@ namespace gs {
         for (int plane = 0; plane < 3; ++plane) {
             Axis plane_axis = static_cast<Axis>(plane + 3); // XY, XZ, YZ
             glm::vec3 color = (translating_ && active_axis_ == plane_axis)
-                                  ? hover_color_ : plane_colors_[plane];
+                                  ? hover_color_
+                                  : plane_colors_[plane];
 
-            float alpha = 0.4f;  // Increased base alpha from 0.3f
-            if (translating_ && active_axis_ == plane_axis) alpha = 0.6f;
+            float alpha = 0.4f; // Increased base alpha from 0.3f
+            if (translating_ && active_axis_ == plane_axis)
+                alpha = 0.6f;
 
             gizmo_shader_->set_uniform("color", glm::vec4(color, alpha));
             gizmo_shader_->set_uniform("isActive", translating_ && active_axis_ == plane_axis);
@@ -295,7 +298,8 @@ namespace gs {
 
         // Render center sphere
         glm::vec3 sphere_color = (translating_ && active_axis_ == Axis::XYZ)
-                                     ? hover_color_ : center_color_;
+                                     ? hover_color_
+                                     : center_color_;
 
         gizmo_shader_->set_uniform("color", glm::vec4(sphere_color, 1.0f));
         gizmo_shader_->set_uniform("isActive", translating_ && active_axis_ == Axis::XYZ);
@@ -333,7 +337,7 @@ namespace gs {
         glm::vec3 current_pos = getPosition();
         glm::vec3 cam_pos = viewport.getCameraPosition();
         float distance_to_cam = glm::length(cam_pos - current_pos);
-        float dynamic_scale = scale_ * (distance_to_cam * 0.15f / 10.0f);  // Match render scale
+        float dynamic_scale = scale_ * (distance_to_cam * 0.15f / 10.0f); // Match render scale
         dynamic_scale = glm::clamp(dynamic_scale, scale_ * 1.2f, scale_ * 2.0f);
 
         float closest_dist = std::numeric_limits<float>::max();
@@ -346,18 +350,21 @@ namespace gs {
             glm::vec3 closest_point = ray_origin + t * ray_dir;
             float dist = glm::length(closest_point - current_pos);
 
-            if (dist < 0.15f * dynamic_scale) {  // Increased from 0.1f
+            if (dist < 0.15f * dynamic_scale) { // Increased from 0.1f
                 return Axis::XYZ;
             }
         }
 
         // Test constraint planes - INCREASED HIT AREA
-        float plane_threshold = plane_size_ * dynamic_scale * 1.5f;  // Increased by 50%
+        float plane_threshold = plane_size_ * dynamic_scale * 1.5f; // Increased by 50%
         for (int plane = 0; plane < 3; ++plane) {
             glm::vec3 plane_normal;
-            if (plane == 0) plane_normal = glm::vec3(0, 0, 1); // XY plane
-            else if (plane == 1) plane_normal = glm::vec3(0, 1, 0); // XZ plane
-            else plane_normal = glm::vec3(1, 0, 0); // YZ plane
+            if (plane == 0)
+                plane_normal = glm::vec3(0, 0, 1); // XY plane
+            else if (plane == 1)
+                plane_normal = glm::vec3(0, 1, 0); // XZ plane
+            else
+                plane_normal = glm::vec3(1, 0, 0); // YZ plane
 
             float denom = glm::dot(ray_dir, plane_normal);
             if (abs(denom) > 0.0001f) {
@@ -390,7 +397,7 @@ namespace gs {
         }
 
         // Test arrows (axes) - MUCH MORE GENEROUS HIT DETECTION
-        float arrow_threshold = 0.2f * dynamic_scale;  // Increased from 0.1f
+        float arrow_threshold = 0.2f * dynamic_scale; // Increased from 0.1f
         for (int axis = 0; axis < 3; ++axis) {
             glm::vec3 axis_dir(0.0f);
             axis_dir[axis] = 1.0f;
@@ -404,7 +411,8 @@ namespace gs {
                 // Find closest point on ray to this point on axis
                 glm::vec3 w = point_on_axis - ray_origin;
                 float t = glm::dot(w, ray_dir);
-                if (t < 0) continue;
+                if (t < 0)
+                    continue;
 
                 glm::vec3 point_on_ray = ray_origin + t * ray_dir;
                 float dist = glm::length(point_on_axis - point_on_ray);
@@ -414,7 +422,7 @@ namespace gs {
                     if (camera_dist < closest_dist) {
                         closest_dist = camera_dist;
                         closest_axis = static_cast<Axis>(axis);
-                        break;  // Found a hit on this axis
+                        break; // Found a hit on this axis
                     }
                 }
             }
@@ -429,21 +437,21 @@ namespace gs {
     void TranslationGizmo::startTranslation(Axis axis,
                                             float screen_x,
                                             float screen_y,
-                                            const Viewport& viewport)
-    {
-        if (axis == Axis::NONE) return;
+                                            const Viewport& viewport) {
+        if (axis == Axis::NONE)
+            return;
 
-        translating_  = true;
-        active_axis_  = axis;
+        translating_ = true;
+        active_axis_ = axis;
         current_translation_ = glm::vec3(0.0f);
 
-        const glm::vec3 gizmo_pos = getPosition();          // world
-        const glm::vec3 cam_pos   = viewport.getCameraPosition();
-        const glm::mat4 view      = viewport.getViewMatrix();
+        const glm::vec3 gizmo_pos = getPosition(); // world
+        const glm::vec3 cam_pos = viewport.getCameraPosition();
+        const glm::mat4 view = viewport.getViewMatrix();
 
         // world‑space camera basis vectors
         const glm::vec3 cam_right = glm::vec3(view[0][0], view[1][0], view[2][0]);
-        const glm::vec3 cam_up    = glm::vec3(view[0][1], view[1][1], view[2][1]);
+        const glm::vec3 cam_up = glm::vec3(view[0][1], view[1][1], view[2][1]);
 
         // -------------------------------------------------------------------------
         // 1. centre‑sphere (free) -> remember screen coords only
@@ -459,17 +467,22 @@ namespace gs {
         //      – as facing as possible towards the camera
         // -------------------------------------------------------------------------
         glm::vec3 axis_dir(0.0f);
-        if (axis == Axis::X)  axis_dir.x = 1.0f;
-        if (axis == Axis::Y)  axis_dir.y = 1.0f;
-        if (axis == Axis::Z)  axis_dir.z = 1.0f;
+        if (axis == Axis::X)
+            axis_dir.x = 1.0f;
+        if (axis == Axis::Y)
+            axis_dir.y = 1.0f;
+        if (axis == Axis::Z)
+            axis_dir.z = 1.0f;
 
-        glm::vec3  n1 = glm::cross(axis_dir, cam_right);
-        glm::vec3  n2 = glm::cross(axis_dir, cam_up);
+        glm::vec3 n1 = glm::cross(axis_dir, cam_right);
+        glm::vec3 n2 = glm::cross(axis_dir, cam_up);
 
         // if either candidate is degenerate, fall back to the other
-        auto len2 = [](const glm::vec3& v){ return glm::dot(v,v); };
-        if (len2(n1) < 1e-8f)   n1 = n2;
-        if (len2(n2) < 1e-8f)   n2 = n1;
+        auto len2 = [](const glm::vec3& v) { return glm::dot(v, v); };
+        if (len2(n1) < 1e-8f)
+            n1 = n2;
+        if (len2(n2) < 1e-8f)
+            n2 = n1;
 
         // choose the normal that faces the camera most (bigger abs(dot))
         const glm::vec3 cam_dir = glm::normalize(cam_pos - gizmo_pos);
@@ -482,12 +495,16 @@ namespace gs {
         drag_plane_distance_ = glm::dot(drag_plane_normal_, gizmo_pos);
 
         // for plane grips (XY/XZ/YZ) normals are trivial
-        if (axis == Axis::XY) drag_plane_normal_ = glm::vec3(0,0,1);
-        if (axis == Axis::XZ) drag_plane_normal_ = glm::vec3(0,1,0);
-        if (axis == Axis::YZ) drag_plane_normal_ = glm::vec3(1,0,0);
+        if (axis == Axis::XY)
+            drag_plane_normal_ = glm::vec3(0, 0, 1);
+        if (axis == Axis::XZ)
+            drag_plane_normal_ = glm::vec3(0, 1, 0);
+        if (axis == Axis::YZ)
+            drag_plane_normal_ = glm::vec3(1, 0, 0);
 
         // guard against accidental zero
-        if (len2(drag_plane_normal_) < 1e-8f) drag_plane_normal_ = glm::vec3(0,1,0);
+        if (len2(drag_plane_normal_) < 1e-8f)
+            drag_plane_normal_ = glm::vec3(0, 1, 0);
 
         // -------------------------------------------------------------------------
         // 3. remember where the first click hit the plane
@@ -495,42 +512,38 @@ namespace gs {
         start_world_pos_ = projectToPlane(screen_x, screen_y, viewport, axis);
     }
 
-
     // -----------------------------------------------------------------------------
     //  TranslationGizmo::updateTranslation – fixed arrow direction
     // -----------------------------------------------------------------------------
-    void TranslationGizmo::updateTranslation(float  screen_x,
-                                             float  screen_y,
-                                             const Viewport& viewport)
-    {
+    void TranslationGizmo::updateTranslation(float screen_x,
+                                             float screen_y,
+                                             const Viewport& viewport) {
         if (!translating_)
             return;
 
         // -------------------------------------------------------------------------
         // 0) Camera helpers
         // -------------------------------------------------------------------------
-        const glm::vec3  cam_pos   = viewport.getCameraPosition();
-        const glm::vec3  gizmo_pos = getPosition();
-        const float      cam_dist  = glm::length(cam_pos - gizmo_pos);
+        const glm::vec3 cam_pos = viewport.getCameraPosition();
+        const glm::vec3 gizmo_pos = getPosition();
+        const float cam_dist = glm::length(cam_pos - gizmo_pos);
 
-        const glm::mat4  view      = viewport.getViewMatrix();
-        const glm::vec3  cam_right = glm::normalize(glm::vec3(view[0])); // +X
-        const glm::vec3  cam_up    = glm::normalize(glm::vec3(view[1])); // +Y
+        const glm::mat4 view = viewport.getViewMatrix();
+        const glm::vec3 cam_right = glm::normalize(glm::vec3(view[0])); // +X
+        const glm::vec3 cam_up = glm::normalize(glm::vec3(view[1]));    // +Y
 
-        const float PIXEL2WORLD = cam_dist * 0.05f;    // screen‑pixel → world units
+        const float PIXEL2WORLD = cam_dist * 0.05f; // screen‑pixel → world units
 
         // -------------------------------------------------------------------------
         // 1) Free‑move sphere (XYZ)
         // -------------------------------------------------------------------------
-        if (active_axis_ == Axis::XYZ)
-        {
+        if (active_axis_ == Axis::XYZ) {
             const glm::vec2 delta_px =
                 glm::vec2(screen_x, screen_y) -
                 glm::vec2(start_world_pos_.x, start_world_pos_.y);
 
             current_translation_ =
-                cam_right *  ( delta_px.x) * PIXEL2WORLD
-                - cam_up    *  ( delta_px.y) * PIXEL2WORLD;
+                cam_right * (delta_px.x) * PIXEL2WORLD - cam_up * (delta_px.y) * PIXEL2WORLD;
             return;
         }
 
@@ -540,15 +553,14 @@ namespace gs {
         const glm::vec3 hit_world =
             projectToPlane(screen_x, screen_y, viewport, active_axis_);
 
-        glm::vec3 delta = hit_world - start_world_pos_;      // raw world delta
+        glm::vec3 delta = hit_world - start_world_pos_; // raw world delta
 
         // -------------------------------------------------------------------------
         // 3a) *** SINGLE‑AXIS handles (FIXED SIGN) ***
         // -------------------------------------------------------------------------
         if (active_axis_ == Axis::X ||
             active_axis_ == Axis::Y ||
-            active_axis_ == Axis::Z)
-        {
+            active_axis_ == Axis::Z) {
             glm::vec3 axis(0.0f);
             axis[int(active_axis_)] = 1.0f;
 
@@ -556,22 +568,21 @@ namespace gs {
                 results in a positive scene translation along the same axis          */
             const float signed_distance = -glm::dot(delta, axis);
 
-            current_translation_ = axis * signed_distance * 2.0f;   // 2× speed‑up
+            current_translation_ = axis * signed_distance * 2.0f; // 2× speed‑up
             return;
         }
 
         // -------------------------------------------------------------------------
         // 3b) Plane handles (XY / XZ / YZ) – unchanged
         // -------------------------------------------------------------------------
-        switch (active_axis_)
-        {
+        switch (active_axis_) {
         case Axis::XY: delta.z = 0.0f; break;
         case Axis::XZ: delta.y = 0.0f; break;
         case Axis::YZ: delta.x = 0.0f; break;
-        default: /* never here */      break;
+        default: /* never here */ break;
         }
 
-        current_translation_ = delta * 2.0f;                 // 2× speed‑up
+        current_translation_ = delta * 2.0f; // 2× speed‑up
     }
 
     void TranslationGizmo::endTranslation() {
