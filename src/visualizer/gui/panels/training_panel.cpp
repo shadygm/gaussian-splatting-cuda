@@ -1307,15 +1307,34 @@ namespace lfs::vis::gui::panels {
                 ImGui::SetTooltip("%s", LOC(Training::Tooltip::MIP_FILTER));
             }
 
-            // BG Modulation
+            // BG Modulation - only available when Solid Color mode is selected (not Image)
             ImGui::TableNextRow();
             ImGui::TableNextColumn();
-            ImGui::Text("%s", LOC(TrainingParams::BG_MODULATION));
+            ImGui::Text("%s", LOC(TrainingParams::BG_MODE_MODULATION));
             ImGui::TableNextColumn();
-            if (can_edit) {
-                ImGui::Checkbox("##bg_modulation", &opt_params.bg_modulation);
-            } else {
-                ImGui::Text("%s", opt_params.bg_modulation ? "Enabled" : "Disabled");
+            {
+                const bool is_image_mode = (opt_params.bg_mode == lfs::core::param::BackgroundMode::Image);
+                ImGui::BeginDisabled(is_image_mode);
+                if (can_edit) {
+                    if (ImGui::Checkbox("##bg_modulation", &opt_params.bg_modulation)) {
+                        // Update bg_mode based on modulation state
+                        if (opt_params.bg_modulation) {
+                            opt_params.bg_mode = lfs::core::param::BackgroundMode::Modulation;
+                        } else {
+                            opt_params.bg_mode = lfs::core::param::BackgroundMode::SolidColor;
+                        }
+                    }
+                } else {
+                    ImGui::Text("%s", opt_params.bg_modulation ? "Enabled" : "Disabled");
+                }
+                ImGui::EndDisabled();
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                    if (is_image_mode) {
+                        ImGui::SetTooltip("BG Modulation is not available when using background image");
+                    } else {
+                        ImGui::SetTooltip("Enable sinusoidal background modulation during training");
+                    }
+                }
             }
 
             // Evaluation

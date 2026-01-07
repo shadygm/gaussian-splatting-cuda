@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <array>
 #include <expected>
 #include <filesystem>
 #include <string>
@@ -19,6 +20,13 @@ namespace lfs::core {
             Segment,        // Soft penalty to enforce alpha→0 in masked areas
             Ignore,         // Completely ignore masked regions in loss
             AlphaConsistent // Enforce exact alpha values from mask
+        };
+
+        // Background mode for training - only one can be active at a time
+        enum class BackgroundMode {
+            SolidColor,  // Use bg_color RGB values
+            Modulation,  // Sinusoidal background modulation
+            Image        // Use custom background image
         };
 
         struct OptimizationParameters {
@@ -60,6 +68,11 @@ namespace lfs::core {
 
             // Mip filter (anti-aliasing)
             bool mip_filter = false;
+
+            // Background settings for training
+            BackgroundMode bg_mode = BackgroundMode::SolidColor; // Which background mode to use
+            std::array<float, 3> bg_color = {0.0f, 0.0f, 0.0f};  // RGB background color [0-1]
+            std::filesystem::path bg_image_path = {};             // Custom background image path
 
             // Bilateral grid parameters
             bool use_bilateral_grid = false;
