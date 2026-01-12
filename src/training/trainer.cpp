@@ -485,11 +485,17 @@ namespace lfs::training {
                     if (bg_image_base_.device() != lfs::core::Device::CUDA) {
                         bg_image_base_ = bg_image_base_.to(lfs::core::Device::CUDA);
                     }
-                    LOG_INFO("Background image loaded: {} [{}x{}]",
-                             params.optimization.bg_image_path.string(),
-                             bg_image_base_.shape()[2], bg_image_base_.shape()[1]);
+                    if (bg_image_base_.shape()[0] != 3) {
+                        LOG_WARN("Background image has {} channels, expected 3 (RGB)", bg_image_base_.shape()[0]);
+                        bg_image_base_ = {};
+                        params_.optimization.bg_mode = lfs::core::param::BackgroundMode::SolidColor;
+                    } else {
+                        LOG_INFO("Background image: {} [{}x{}]",
+                                 params.optimization.bg_image_path.string(),
+                                 bg_image_base_.shape()[2], bg_image_base_.shape()[1]);
+                    }
                 } catch (const std::exception& e) {
-                    LOG_WARN("Failed to load background image: {}. Falling back to solid color.", e.what());
+                    LOG_WARN("Failed to load background image: {}", e.what());
                     params_.optimization.bg_mode = lfs::core::param::BackgroundMode::SolidColor;
                 }
             }
@@ -600,15 +606,25 @@ namespace lfs::training {
                 if (bg_image_base_.device() != lfs::core::Device::CUDA) {
                     bg_image_base_ = bg_image_base_.to(lfs::core::Device::CUDA);
                 }
-                // Clear the resize cache since the base image changed
                 bg_image_cache_.clear();
-                LOG_INFO("Background image reloaded: {} [{}x{}]",
-                         params.optimization.bg_image_path.string(),
-                         bg_image_base_.shape()[2], bg_image_base_.shape()[1]);
+                if (bg_image_base_.shape()[0] != 3) {
+                    LOG_WARN("Background image has {} channels, expected 3 (RGB)", bg_image_base_.shape()[0]);
+                    bg_image_base_ = {};
+                    params_.optimization.bg_mode = lfs::core::param::BackgroundMode::SolidColor;
+                } else {
+                    LOG_INFO("Background image: {} [{}x{}]",
+                             params.optimization.bg_image_path.string(),
+                             bg_image_base_.shape()[2], bg_image_base_.shape()[1]);
+                }
             } catch (const std::exception& e) {
-                LOG_WARN("Failed to load background image: {}. Falling back to solid color.", e.what());
+                LOG_WARN("Failed to load background image: {}", e.what());
                 params_.optimization.bg_mode = lfs::core::param::BackgroundMode::SolidColor;
             }
+        }
+
+        if (!bg_mode_is_image && (bg_image_base_.is_valid() || !bg_image_cache_.empty())) {
+            bg_image_cache_.clear();
+            bg_image_base_ = {};
         }
 
         // Update background color tensor if changed

@@ -144,18 +144,15 @@ namespace lfs::vis::gui::panels {
         // Background Settings
         ImGui::Separator();
         ImGui::Text("%s", LOC(MainPanel::BACKGROUND));
-        
-        // Get parameter manager to access training background settings
+
         auto* param_manager = services().paramsOrNull();
-        
-        // Background type dropdown (Solid Color or Image)
-        static const char* bg_type_items[] = {"Solid Color", "Image"};
-        int bg_type = 0; // 0 = Solid Color, 1 = Image
-        
+        const char* bg_type_items[] = {LOC(TrainingParams::BG_MODE_COLOR), LOC(TrainingParams::BG_MODE_IMAGE)};
+        int bg_type = 0;
+
         if (param_manager && param_manager->ensureLoaded()) {
             auto& opt_params = param_manager->getActiveParams();
             bg_type = (opt_params.bg_mode == lfs::core::param::BackgroundMode::Image) ? 1 : 0;
-            
+
             if (ImGui::Combo("##bg_type", &bg_type, bg_type_items, IM_ARRAYSIZE(bg_type_items))) {
                 if (bg_type == 0) {
                     opt_params.bg_mode = lfs::core::param::BackgroundMode::SolidColor;
@@ -164,7 +161,7 @@ namespace lfs::vis::gui::panels {
                     opt_params.bg_modulation = false; // Disable modulation when image is selected
                 }
             }
-            
+
             if (bg_type == 0) {
                 // Solid Color mode - show color picker
                 float bg_color[3] = {opt_params.bg_color[0], opt_params.bg_color[1], opt_params.bg_color[2]};
@@ -183,7 +180,7 @@ namespace lfs::vis::gui::panels {
                 if (!opt_params.bg_image_path.empty() && ImGui::IsItemHovered()) {
                     ImGui::SetTooltip("%s", lfs::core::path_to_utf8(opt_params.bg_image_path).c_str());
                 }
-                
+
                 if (ImGui::Button(LOC(TrainingParams::BG_IMAGE_BROWSE))) {
                     const auto selected = OpenImageFileDialog();
                     if (!selected.empty()) {
