@@ -575,6 +575,7 @@
     "bg_mode_color": "颜色",
     "bg_mode_modulation": "调制",
     "bg_mode_image": "图像",
+    "bg_mode_random": "随机",
     "bg_modulation": "背景调制:",
     "bg_color": "颜色:",
     "bg_image": "图像:",

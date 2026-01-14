@@ -141,66 +141,14 @@ namespace lfs::vis::gui::panels {
             settings_changed = true;
         }
 
-        // Background Settings
+        // Background Color
         ImGui::Separator();
         ImGui::Text("%s", LOC(MainPanel::BACKGROUND));
 
-        auto* param_manager = services().paramsOrNull();
-        const char* bg_type_items[] = {LOC(TrainingParams::BG_MODE_COLOR), LOC(TrainingParams::BG_MODE_IMAGE)};
-        int bg_type = 0;
-
-        if (param_manager && param_manager->ensureLoaded()) {
-            auto& opt_params = param_manager->getActiveParams();
-            bg_type = (opt_params.bg_mode == lfs::core::param::BackgroundMode::Image) ? 1 : 0;
-
-            if (ImGui::Combo("##bg_type", &bg_type, bg_type_items, IM_ARRAYSIZE(bg_type_items))) {
-                if (bg_type == 0) {
-                    opt_params.bg_mode = lfs::core::param::BackgroundMode::SolidColor;
-                } else {
-                    opt_params.bg_mode = lfs::core::param::BackgroundMode::Image;
-                    opt_params.bg_modulation = false; // Disable modulation when image is selected
-                }
-            }
-
-            if (bg_type == 0) {
-                // Solid Color mode - show color picker
-                float bg_color[3] = {opt_params.bg_color[0], opt_params.bg_color[1], opt_params.bg_color[2]};
-                if (ImGui::ColorEdit3(LOC(MainPanel::COLOR), bg_color)) {
-                    opt_params.bg_color = {bg_color[0], bg_color[1], bg_color[2]};
-                    // Also update render settings for viewport background
-                    settings.background_color = glm::vec3(bg_color[0], bg_color[1], bg_color[2]);
-                    settings_changed = true;
-                }
-            } else {
-                // Image mode - show image path and browse button
-                const std::string display_name = opt_params.bg_image_path.empty()
-                                                     ? "(none)"
-                                                     : lfs::core::path_to_utf8(opt_params.bg_image_path.filename());
-                ImGui::Text("%s", display_name.c_str());
-                if (!opt_params.bg_image_path.empty() && ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("%s", lfs::core::path_to_utf8(opt_params.bg_image_path).c_str());
-                }
-
-                if (ImGui::Button(LOC(TrainingParams::BG_IMAGE_BROWSE))) {
-                    const auto selected = OpenImageFileDialog();
-                    if (!selected.empty()) {
-                        opt_params.bg_image_path = selected;
-                    }
-                }
-                if (!opt_params.bg_image_path.empty()) {
-                    ImGui::SameLine();
-                    if (ImGui::Button(LOC(TrainingParams::BG_IMAGE_CLEAR))) {
-                        opt_params.bg_image_path.clear();
-                    }
-                }
-            }
-        } else {
-            // Fallback: just show viewport background color if no parameter manager
-            float bg_color[3] = {settings.background_color.x, settings.background_color.y, settings.background_color.z};
-            if (ImGui::ColorEdit3(LOC(MainPanel::COLOR), bg_color)) {
-                settings.background_color = glm::vec3(bg_color[0], bg_color[1], bg_color[2]);
-                settings_changed = true;
-            }
+        float bg_color[3] = {settings.background_color.x, settings.background_color.y, settings.background_color.z};
+        if (ImGui::ColorEdit3(LOC(MainPanel::COLOR), bg_color)) {
+            settings.background_color = glm::vec3(bg_color[0], bg_color[1], bg_color[2]);
+            settings_changed = true;
         }
 
         // Coordinate Axes

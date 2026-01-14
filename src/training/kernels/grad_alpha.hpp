@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <cuda_runtime.h>
 
 namespace lfs::training::kernels {
@@ -298,6 +299,13 @@ namespace lfs::training::kernels {
         int C,
         int src_H, int src_W,
         int dst_H, int dst_W,
+        cudaStream_t stream = nullptr);
+
+    // Generate random per-pixel RGB background [3, H, W] with values in [0, 1]
+    void launch_random_background(
+        float* output,
+        int H, int W,
+        uint64_t seed,
         cudaStream_t stream = nullptr);
 
 } // namespace lfs::training::kernels

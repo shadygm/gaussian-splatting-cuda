@@ -91,7 +91,7 @@ namespace lfs::core {
             opt_json["prune_ratio"] = prune_ratio;
             opt_json["bg_modulation"] = bg_modulation;
 
-            static constexpr const char* BG_MODE_NAMES[] = {"solid_color", "modulation", "image"};
+            static constexpr const char* BG_MODE_NAMES[] = {"solid_color", "modulation", "image", "random"};
             opt_json["bg_mode"] = BG_MODE_NAMES[static_cast<int>(bg_mode)];
             opt_json["bg_color"] = {bg_color[0], bg_color[1], bg_color[2]};
             if (!bg_image_path.empty()) {
@@ -278,6 +278,8 @@ namespace lfs::core {
                     params.bg_mode = BackgroundMode::Modulation;
                 } else if (mode == "image") {
                     params.bg_mode = BackgroundMode::Image;
+                } else if (mode == "random") {
+                    params.bg_mode = BackgroundMode::Random;
                 }
             }
             if (json.contains("bg_color") && json["bg_color"].is_array() && json["bg_color"].size() == 3) {

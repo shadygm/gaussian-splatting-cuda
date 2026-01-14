@@ -575,6 +575,7 @@
     "bg_mode_color": "색상",
     "bg_mode_modulation": "변조",
     "bg_mode_image": "이미지",
+    "bg_mode_random": "무작위",
     "bg_modulation": "배경 변조:",
     "bg_color": "색상:",
     "bg_image": "이미지:",

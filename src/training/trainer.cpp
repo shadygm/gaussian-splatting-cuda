@@ -792,6 +792,25 @@ namespace lfs::training {
         return resized;
     }
 
+    lfs::core::Tensor Trainer::get_random_background_for_camera(int width, int height, int iteration) {
+        const size_t required_size = 3 * static_cast<size_t>(height) * static_cast<size_t>(width);
+
+        if (!random_bg_buffer_.is_valid() || random_bg_buffer_.numel() != required_size) {
+            random_bg_buffer_ = lfs::core::Tensor::empty(
+                {3, static_cast<size_t>(height), static_cast<size_t>(width)},
+                lfs::core::Device::CUDA,
+                lfs::core::DataType::Float32);
+        }
+
+        kernels::launch_random_background(
+            random_bg_buffer_.ptr<float>(),
+            height, width,
+            static_cast<uint64_t>(iteration),
+            nullptr);
+
+        return random_bg_buffer_;
+    }
+
     std::expected<Trainer::StepResult, std::string> Trainer::train_step(
         int iter,
         lfs::core::Camera* cam,
@@ -839,11 +858,11 @@ namespace lfs::training {
             lfs::core::Tensor& bg = background_for_step(iter);
             nvtxRangePop();
 
-            // Get background image for this camera (resized to camera dimensions)
-            // Only used when bg_mode is Image
             lfs::core::Tensor bg_image;
             if (params_.optimization.bg_mode == lfs::core::param::BackgroundMode::Image) {
                 bg_image = get_background_image_for_camera(cam->image_width(), cam->image_height());
+            } else if (params_.optimization.bg_mode == lfs::core::param::BackgroundMode::Random) {
+                bg_image = get_random_background_for_camera(cam->image_width(), cam->image_height(), iter);
             }
 
             // Configurable tile-based training to reduce peak memory

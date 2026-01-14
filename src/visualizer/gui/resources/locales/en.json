@@ -575,6 +575,7 @@
     "bg_mode_color": "Color",
     "bg_mode_modulation": "Modulation",
     "bg_mode_image": "Image",
+    "bg_mode_random": "Random",
     "bg_modulation": "BG Modulation:",
     "bg_color": "Color:",
     "bg_image": "Image:",

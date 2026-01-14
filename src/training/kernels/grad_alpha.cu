@@ -631,4 +631,42 @@ namespace lfs::training::kernels {
             src, dst, C, src_H, src_W, dst_H, dst_W);
     }
 
+    __device__ __forceinline__ uint32_t pcg_hash(uint32_t v) {
+        uint32_t state = v * 747796405u + 2891336453u;
+        uint32_t word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+        return (word >> 22u) ^ word;
+    }
+
+    __device__ __forceinline__ float uint_to_float(uint32_t v) {
+        return static_cast<float>(v) * (1.0f / 4294967296.0f);
+    }
+
+    __global__ void random_background_kernel(
+        float* __restrict__ output,
+        const int HW,
+        const uint32_t seed) {
+        const int idx = blockIdx.x * blockDim.x + threadIdx.x;
+
+        if (idx >= HW)
+            return;
+
+        const uint32_t base = seed ^ static_cast<uint32_t>(idx);
+        output[idx] = uint_to_float(pcg_hash(base));
+        output[HW + idx] = uint_to_float(pcg_hash(base + 0x9E3779B9u));
+        output[2 * HW + idx] = uint_to_float(pcg_hash(base + 0x6C8E9CF9u));
+    }
+
+    void launch_random_background(
+        float* output,
+        const int H, const int W,
+        const uint64_t seed,
+        cudaStream_t stream) {
+        const int HW = H * W;
+        constexpr int BLOCK_SIZE = 256;
+        const int blocks = (HW + BLOCK_SIZE - 1) / BLOCK_SIZE;
+
+        random_background_kernel<<<blocks, BLOCK_SIZE, 0, stream>>>(
+            output, HW, static_cast<uint32_t>(seed));
+    }
+
 } // namespace lfs::training::kernels

@@ -131,6 +131,8 @@ namespace lfs::training {
         // Returns empty tensor if no background image is set
         lfs::core::Tensor get_background_image_for_camera(int width, int height);
 
+        lfs::core::Tensor get_random_background_for_camera(int width, int height, int iteration);
+
         // Protected method for processing a single training step
         std::expected<StepResult, std::string> train_step(
             int iter,
@@ -203,8 +205,9 @@ namespace lfs::training {
 
         lfs::core::Tensor background_{};
         lfs::core::Tensor bg_mix_buffer_;
-        lfs::core::Tensor bg_image_base_{};                                          // Original background image [C, H, W]
-        std::unordered_map<uint64_t, lfs::core::Tensor> bg_image_cache_;             // Cache of resized bg images keyed by (H << 32) | W
+        lfs::core::Tensor bg_image_base_{};                              // Original background image [C, H, W]
+        std::unordered_map<uint64_t, lfs::core::Tensor> bg_image_cache_; // Cache of resized bg images keyed by (H << 32) | W
+        lfs::core::Tensor random_bg_buffer_{};                           // Reusable buffer for random background
         std::unique_ptr<TrainingProgress> progress_;
         size_t train_dataset_size_ = 0;
 

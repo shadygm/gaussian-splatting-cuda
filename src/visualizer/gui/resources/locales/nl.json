@@ -575,6 +575,7 @@
     "bg_mode_color": "Kleur",
     "bg_mode_modulation": "Modulatie",
     "bg_mode_image": "Afbeelding",
+    "bg_mode_random": "Willekeurig",
     "bg_modulation": "Achtergrond Modulatie:",
     "bg_color": "Kleur:",
     "bg_image": "Afbeelding:",

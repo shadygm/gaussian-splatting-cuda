@@ -575,6 +575,7 @@
     "bg_mode_color": "色",
     "bg_mode_modulation": "変調",
     "bg_mode_image": "画像",
+    "bg_mode_random": "ランダム",
     "bg_modulation": "背景変調:",
     "bg_color": "色:",
     "bg_image": "画像:",
