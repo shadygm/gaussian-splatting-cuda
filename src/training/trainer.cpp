@@ -491,7 +491,7 @@ namespace lfs::training {
                         params_.optimization.bg_mode = lfs::core::param::BackgroundMode::SolidColor;
                     } else {
                         LOG_INFO("Background image: {} [{}x{}]",
-                                 params.optimization.bg_image_path.string(),
+                                 lfs::core::path_to_utf8(params.optimization.bg_image_path),
                                  bg_image_base_.shape()[2], bg_image_base_.shape()[1]);
                     }
                 } catch (const std::exception& e) {
@@ -519,6 +519,33 @@ namespace lfs::training {
                     return std::unexpected(std::format("Failed to resume from checkpoint: {}", resume_result.error()));
                 }
                 LOG_INFO("Resumed training from checkpoint at iteration {}", *resume_result);
+
+                // Reload bg_image if checkpoint restored different settings
+                if (params_.optimization.bg_mode == lfs::core::param::BackgroundMode::Image &&
+                    !params_.optimization.bg_image_path.empty() &&
+                    std::filesystem::exists(params_.optimization.bg_image_path) &&
+                    !bg_image_base_.is_valid()) {
+                    try {
+                        auto& loader = lfs::io::CacheLoader::getInstance();
+                        lfs::io::LoadParams load_params{.resize_factor = 1, .max_width = 0, .cuda_stream = nullptr};
+                        bg_image_base_ = loader.load_cached_image(params_.optimization.bg_image_path, load_params);
+                        if (bg_image_base_.device() != lfs::core::Device::CUDA) {
+                            bg_image_base_ = bg_image_base_.to(lfs::core::Device::CUDA);
+                        }
+                        if (bg_image_base_.shape()[0] != 3) {
+                            LOG_WARN("Background image has {} channels, expected 3", bg_image_base_.shape()[0]);
+                            bg_image_base_ = {};
+                            params_.optimization.bg_mode = lfs::core::param::BackgroundMode::SolidColor;
+                        } else {
+                            LOG_INFO("Background image from checkpoint: {} [{}x{}]",
+                                     lfs::core::path_to_utf8(params_.optimization.bg_image_path),
+                                     bg_image_base_.shape()[2], bg_image_base_.shape()[1]);
+                        }
+                    } catch (const std::exception& e) {
+                        LOG_WARN("Failed to load background image from checkpoint: {}", e.what());
+                        params_.optimization.bg_mode = lfs::core::param::BackgroundMode::SolidColor;
+                    }
+                }
             }
 
             // Print configuration
@@ -613,7 +640,7 @@ namespace lfs::training {
                     params_.optimization.bg_mode = lfs::core::param::BackgroundMode::SolidColor;
                 } else {
                     LOG_INFO("Background image: {} [{}x{}]",
-                             params.optimization.bg_image_path.string(),
+                             lfs::core::path_to_utf8(params.optimization.bg_image_path),
                              bg_image_base_.shape()[2], bg_image_base_.shape()[1]);
                 }
             } catch (const std::exception& e) {

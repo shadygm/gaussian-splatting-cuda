@@ -95,7 +95,7 @@ namespace lfs::core {
             opt_json["bg_mode"] = BG_MODE_NAMES[static_cast<int>(bg_mode)];
             opt_json["bg_color"] = {bg_color[0], bg_color[1], bg_color[2]};
             if (!bg_image_path.empty()) {
-                opt_json["bg_image_path"] = bg_image_path.string();
+                opt_json["bg_image_path"] = path_to_utf8(bg_image_path);
             }
 
             // Mask parameters
@@ -286,7 +286,7 @@ namespace lfs::core {
                 params.bg_color = {json["bg_color"][0], json["bg_color"][1], json["bg_color"][2]};
             }
             if (json.contains("bg_image_path")) {
-                params.bg_image_path = std::filesystem::path(json["bg_image_path"].get<std::string>());
+                params.bg_image_path = utf8_to_path(json["bg_image_path"].get<std::string>());
             }
 
             // Mask parameters
