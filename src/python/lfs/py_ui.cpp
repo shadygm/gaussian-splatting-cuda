@@ -13,6 +13,7 @@
 #include "core/scene.hpp"
 #include "gui/ui_widgets.hpp"
 #include "gui/utils/windows_utils.hpp"
+#include "io/exporter.hpp"
 #include "internal/resource_paths.hpp"
 #include "py_gizmo.hpp"
 #include "py_keymap.hpp"
@@ -3779,6 +3780,72 @@ namespace lfs::python {
             "merge_group",
             [](const std::string& name) { lfs::core::events::cmd::MergeGroup{.name = name}.emit(); },
             nb::arg("name"), "Merge group children into a single PLY");
+
+        m.def(
+            "save_node_to_disk",
+            [](const std::string& node_name) {
+                lfs::core::Scene* scene = get_application_scene();
+                if (!scene)
+                    scene = get_scene_for_python();
+                if (!scene) {
+                    LOG_WARN("save_node_to_disk: no scene available");
+                    return;
+                }
+
+                const auto* node = scene->getNode(node_name);
+                if (!node) {
+                    LOG_WARN("save_node_to_disk: node not found: '{}'", node_name);
+                    return;
+                }
+
+                std::string default_name = node_name;
+                if (default_name.empty())
+                    default_name = "scene_node";
+
+                const auto path = lfs::vis::gui::SavePlyFileDialog(default_name);
+                if (path.empty())
+                    return;
+
+                const lfs::io::PlySaveOptions options{
+                    .output_path = path,
+                    .binary = false,
+                    .async = false};
+
+                lfs::io::Result<void> result = std::unexpected(
+                    lfs::io::Error{lfs::io::ErrorCode::INTERNAL_ERROR, "uninitialized"});
+                switch (node->type) {
+                    case lfs::core::NodeType::POINTCLOUD: {
+                        if (!node->point_cloud || node->point_cloud->size() <= 0) {
+                            LOG_WARN("save_node_to_disk: point cloud '{}' has no data", node_name);
+                            return;
+                        }
+                        result = lfs::io::save_ply(*node->point_cloud, options);
+                        break;
+                    }
+                    case lfs::core::NodeType::SPLAT: {
+                        if (!node->model || node->model->size() <= 0) {
+                            LOG_WARN("save_node_to_disk: splat '{}' has no data", node_name);
+                            return;
+                        }
+                        result = lfs::io::save_ply(*node->model, options);
+                        break;
+                    }
+                    default:
+                        LOG_WARN("save_node_to_disk: unsupported node type for '{}': {}", node_name, static_cast<int>(node->type));
+                        return;
+                }
+
+                if (!result) {
+                    LOG_ERROR("Failed to save '{}' to {}: {}",
+                              node_name,
+                              lfs::core::path_to_utf8(path),
+                              result.error().message);
+                } else {
+                    LOG_INFO("Saved '{}' to {}", node_name, lfs::core::path_to_utf8(path));
+                }
+            },
+            nb::arg("node_name"),
+            "Save a SPLAT or POINTCLOUD node to disk as a PLY file. Opens a file dialog; does nothing if cancelled.");
 
         // Image texture APIs for Python image preview
         m.def(

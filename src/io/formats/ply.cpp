@@ -671,12 +671,32 @@ namespace lfs::io {
                 g_save_futures.end());
         }
 
+        namespace {
+            std::vector<std::string> make_indexed_names(const std::string& prefix, const size_t count) {
+                std::vector<std::string> names;
+                names.reserve(count);
+                for (size_t i = 0; i < count; ++i) {
+                    names.emplace_back(prefix + std::to_string(i));
+                }
+                return names;
+            }
+        } // namespace
+
         Result<void> write_ply_binary(const PointCloud& pc, const std::filesystem::path& output_path) {
-            std::vector<Tensor> tensors;
-            tensors.push_back(pc.means.cpu().contiguous());
+            if (!pc.means.is_valid() || pc.means.ndim() != 2 || pc.means.size(1) != 3) {
+                return make_error(ErrorCode::INTERNAL_ERROR, "PointCloud.means must be [N,3]", output_path);
+            }
+
+            // Write using tinyply
+            tinyply::PlyFile ply;
+            const size_t N = pc.means.size(0);
+
+            std::vector<Tensor> float_tensors;
+            float_tensors.reserve(8);
+            float_tensors.push_back(pc.means.cpu().contiguous());
 
             if (pc.normals.is_valid()) {
-                tensors.push_back(pc.normals.cpu().contiguous());
+                float_tensors.push_back(pc.normals.cpu().contiguous());
             }
 
             auto process_sh = [](const Tensor& sh) -> Tensor {
@@ -688,31 +708,93 @@ namespace lfs::io {
             };
 
             if (pc.sh0.is_valid())
-                tensors.push_back(process_sh(pc.sh0));
+                float_tensors.push_back(process_sh(pc.sh0));
             if (pc.shN.is_valid())
-                tensors.push_back(process_sh(pc.shN));
+                float_tensors.push_back(process_sh(pc.shN));
             if (pc.opacity.is_valid())
-                tensors.push_back(pc.opacity.cpu().contiguous());
+                float_tensors.push_back(pc.opacity.cpu().contiguous());
             if (pc.scaling.is_valid())
-                tensors.push_back(pc.scaling.cpu().contiguous());
+                float_tensors.push_back(pc.scaling.cpu().contiguous());
             if (pc.rotation.is_valid())
-                tensors.push_back(pc.rotation.cpu().contiguous());
+                float_tensors.push_back(pc.rotation.cpu().contiguous());
 
-            // Write using tinyply
-            tinyply::PlyFile ply;
+            // Optional colors: write as uchar red/green/blue
+            Tensor colors_u8;
+            if (pc.colors.is_valid() && pc.colors.numel() > 0) {
+                auto colors_cpu = pc.colors.cpu().contiguous();
+                if (colors_cpu.ndim() == 2 && colors_cpu.size(0) == static_cast<int64_t>(N) && colors_cpu.size(1) == 3) {
+                    if (colors_cpu.dtype() == DataType::UInt8) {
+                        colors_u8 = colors_cpu;
+                    } else if (colors_cpu.dtype() == DataType::Float32) {
+                        // PLY convention: float colors are typically [0,1]
+                        colors_u8 = (colors_cpu * 255.0f).clamp(0, 255).to(DataType::UInt8);
+                    } else {
+                        colors_u8 = colors_cpu.to(DataType::UInt8);
+                    }
+
+                    ply.add_properties_to_element(
+                        "vertex", {"red", "green", "blue"}, tinyply::Type::UINT8, N,
+                        reinterpret_cast<uint8_t*>(const_cast<uint8_t*>(colors_u8.ptr<uint8_t>())),
+                        tinyply::Type::INVALID, 0);
+                }
+            }
+
             size_t attr_off = 0;
+            auto add_float_block = [&](const Tensor& t, std::vector<std::string> fallback_names) {
+                const size_t cols = t.size(1);
 
-            for (const auto& tensor : tensors) {
-                const size_t cols = tensor.size(1);
-                std::vector<std::string> attrs(pc.attribute_names.begin() + attr_off,
-                                               pc.attribute_names.begin() + attr_off + cols);
+                std::vector<std::string> attrs;
+                if (pc.attribute_names.size() >= attr_off + cols) {
+                    attrs.assign(pc.attribute_names.begin() + static_cast<int64_t>(attr_off),
+                                 pc.attribute_names.begin() + static_cast<int64_t>(attr_off + cols));
+                } else {
+                    if (fallback_names.size() != cols) {
+                        fallback_names.clear();
+                        fallback_names.reserve(cols);
+                        for (size_t i = 0; i < cols; ++i)
+                            fallback_names.emplace_back("attr_" + std::to_string(attr_off + i));
+                    }
+                    attrs = std::move(fallback_names);
+                }
 
                 ply.add_properties_to_element(
-                    "vertex", attrs, tinyply::Type::FLOAT32, tensor.size(0),
-                    reinterpret_cast<uint8_t*>(const_cast<float*>(tensor.ptr<float>())),
+                    "vertex", attrs, tinyply::Type::FLOAT32, t.size(0),
+                    reinterpret_cast<uint8_t*>(const_cast<float*>(t.ptr<float>())),
                     tinyply::Type::INVALID, 0);
 
                 attr_off += cols;
+            };
+
+            // Add float properties in the same order as existing attribute_names conventions
+            if (!float_tensors.empty()) {
+                add_float_block(float_tensors[0], {"x", "y", "z"});
+            }
+            size_t float_tensor_idx = 1;
+            if (pc.normals.is_valid() && float_tensor_idx < float_tensors.size()) {
+                add_float_block(float_tensors[float_tensor_idx++], {"nx", "ny", "nz"});
+            }
+            if (pc.sh0.is_valid() && float_tensor_idx < float_tensors.size()) {
+                const auto& t = float_tensors[float_tensor_idx];
+                add_float_block(t, make_indexed_names("f_dc_", static_cast<size_t>(t.size(1))));
+                ++float_tensor_idx;
+            }
+            if (pc.shN.is_valid() && float_tensor_idx < float_tensors.size()) {
+                const auto& t = float_tensors[float_tensor_idx];
+                add_float_block(t, make_indexed_names("f_rest_", static_cast<size_t>(t.size(1))));
+                ++float_tensor_idx;
+            }
+            if (pc.opacity.is_valid() && float_tensor_idx < float_tensors.size()) {
+                add_float_block(float_tensors[float_tensor_idx++], {"opacity"});
+            }
+            if (pc.scaling.is_valid() && float_tensor_idx < float_tensors.size()) {
+                const auto& t = float_tensors[float_tensor_idx];
+                add_float_block(t, make_indexed_names("scale_", static_cast<size_t>(t.size(1))));
+                ++float_tensor_idx;
+            }
+            if (pc.rotation.is_valid() && float_tensor_idx < float_tensors.size()) {
+                const auto& t = float_tensors[float_tensor_idx];
+                add_float_block(t, make_indexed_names("rot_", static_cast<size_t>(t.size(1))));
+                ++float_tensor_idx;
             }
 
             std::filebuf fb;
@@ -861,7 +943,10 @@ namespace lfs::io {
         if (point_cloud.rotation.is_valid())
             floats_per_vertex += 4;
 
-        const size_t estimated_size = 1024 + vertex_count * floats_per_vertex * sizeof(float);
+        size_t estimated_size = 1024 + vertex_count * floats_per_vertex * sizeof(float);
+        if (point_cloud.colors.is_valid() && point_cloud.colors.numel() > 0) {
+            estimated_size += vertex_count * 3; // uchar RGB
+        }
 
         // Check disk space with 10% margin
         if (auto space_check = check_disk_space(options.output_path, estimated_size, 1.1f); !space_check) {
