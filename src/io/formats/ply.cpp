@@ -672,16 +672,14 @@ namespace lfs::io {
                 g_save_futures.end());
         }
 
-        namespace {
-            std::vector<std::string> make_indexed_names(const std::string& prefix, const size_t count) {
-                std::vector<std::string> names;
-                names.reserve(count);
-                for (size_t i = 0; i < count; ++i) {
-                    names.emplace_back(prefix + std::to_string(i));
-                }
-                return names;
+        std::vector<std::string> make_indexed_names(const std::string& prefix, const size_t count) {
+            std::vector<std::string> names;
+            names.reserve(count);
+            for (size_t i = 0; i < count; ++i) {
+                names.emplace_back(prefix + std::to_string(i));
             }
-        } // namespace
+            return names;
+        }
 
         Result<void> write_ply_binary(const PointCloud& pc, const std::filesystem::path& output_path) {
             if (!pc.means.is_valid() || pc.means.ndim() != 2 || pc.means.size(1) != 3) {
