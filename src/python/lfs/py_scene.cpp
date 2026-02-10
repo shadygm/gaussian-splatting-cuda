@@ -115,7 +115,13 @@ namespace lfs::python {
         return PyPointCloud(node_->point_cloud.get(), false, node_, scene_);
     }
 
-    // PyPointCloud filter implementation - uses tensor[mask] row selection
+    std::optional<PyMeshInfo> PySceneNode::mesh() {
+        if (node_->type != core::NodeType::MESH || !node_->mesh) {
+            return std::nullopt;
+        }
+        return PyMeshInfo(node_->mesh);
+    }
+
     int64_t PyPointCloud::filter(const PyTensor& keep_mask) {
         const auto& mask = keep_mask.tensor();
         assert(mask.dtype() == core::DataType::Bool && "Mask must be boolean");
@@ -179,8 +185,7 @@ namespace lfs::python {
             }
         }
         if (scene_) {
-            scene_->invalidateCache();
-            lfs::core::events::state::SceneChanged{}.emit();
+            scene_->notifyMutation(core::Scene::MutationType::MODEL_CHANGED);
         }
     }
 
@@ -190,8 +195,7 @@ namespace lfs::python {
         assert(cols.shape()[0] == pc_->size());
         pc_->colors = cols.to(core::Device::CUDA);
         if (scene_) {
-            scene_->invalidateCache();
-            lfs::core::events::state::SceneChanged{}.emit();
+            scene_->notifyMutation(core::Scene::MutationType::MODEL_CHANGED);
         }
     }
 
@@ -206,8 +210,7 @@ namespace lfs::python {
             node_->centroid = glm::vec3(acc(0), acc(1), acc(2));
         }
         if (scene_) {
-            scene_->invalidateCache();
-            lfs::core::events::state::SceneChanged{}.emit();
+            scene_->notifyMutation(core::Scene::MutationType::MODEL_CHANGED);
         }
     }
 
@@ -290,8 +293,40 @@ namespace lfs::python {
         assert(cols.shape().rank() == 2 && cols.shape()[1] == 3);
         assert(pts.shape()[0] == cols.shape()[0]);
 
-        auto pc = std::make_shared<core::PointCloud>(pts.clone(), cols.clone());
+        auto pc = std::make_shared<core::PointCloud>(pts.to(core::Device::CUDA), cols.to(core::Device::CUDA));
         return scene_->addPointCloud(name, std::move(pc), parent);
+    }
+
+    int32_t PyScene::add_mesh(const std::string& name,
+                              const PyTensor& vertices,
+                              const PyTensor& indices,
+                              std::optional<PyTensor> colors,
+                              std::optional<PyTensor> normals,
+                              const int32_t parent) {
+        const auto& verts = vertices.tensor();
+        const auto& idx = indices.tensor();
+        assert(verts.shape().rank() == 2 && verts.shape()[1] == 3);
+        assert(idx.shape().rank() == 2 && idx.shape()[1] == 3);
+
+        auto mesh = std::make_shared<core::MeshData>(
+            verts.to(core::DataType::Float32).to(core::Device::CPU),
+            idx.to(core::DataType::Int32).to(core::Device::CPU));
+
+        if (colors && colors->tensor().is_valid()) {
+            const auto& c = colors->tensor();
+            assert(c.shape().rank() == 2 && c.shape()[0] == verts.shape()[0]);
+            mesh->colors = c.to(core::DataType::Float32).to(core::Device::CPU);
+        }
+
+        if (normals && normals->tensor().is_valid()) {
+            const auto& n = normals->tensor();
+            assert(n.shape().rank() == 2 && n.shape()[1] == 3 && n.shape()[0] == verts.shape()[0]);
+            mesh->normals = n.to(core::DataType::Float32).to(core::Device::CPU);
+        } else {
+            mesh->compute_normals();
+        }
+
+        return scene_->addMesh(name, std::move(mesh), parent);
     }
 
     int32_t PyScene::add_camera_group(const std::string& name, const int32_t parent, const size_t camera_count) {
@@ -311,11 +346,13 @@ namespace lfs::python {
         const auto& R_tensor = R.tensor();
         const auto& T_tensor = T.tensor();
         assert(R_tensor.ndim() == 2 && R_tensor.size(0) == 3 && R_tensor.size(1) == 3);
-        assert(T_tensor.ndim() == 2 && T_tensor.size(0) == 3 && T_tensor.size(1) == 1);
+        assert(T_tensor.numel() == 3);
+
+        auto T_flat = T_tensor.ndim() == 2 ? T_tensor.reshape({3}) : T_tensor;
 
         auto camera = std::make_shared<lfs::core::Camera>(
             R_tensor.clone(),
-            T_tensor.clone(),
+            T_flat.clone(),
             focal_x, focal_y,
             static_cast<float>(width) / 2.0f, static_cast<float>(height) / 2.0f,
             lfs::core::Tensor{},
@@ -496,7 +533,14 @@ namespace lfs::python {
             .value("CAMERA_GROUP", core::NodeType::CAMERA_GROUP)
             .value("CAMERA", core::NodeType::CAMERA)
             .value("IMAGE_GROUP", core::NodeType::IMAGE_GROUP)
-            .value("IMAGE", core::NodeType::IMAGE);
+            .value("IMAGE", core::NodeType::IMAGE)
+            .value("MESH", core::NodeType::MESH);
+
+        nb::class_<PyMeshInfo>(m, "MeshInfo")
+            .def_prop_ro("vertex_count", &PyMeshInfo::vertex_count)
+            .def_prop_ro("face_count", &PyMeshInfo::face_count)
+            .def_prop_ro("has_normals", &PyMeshInfo::has_normals)
+            .def_prop_ro("has_texcoords", &PyMeshInfo::has_texcoords);
 
         // SelectionGroup struct
         nb::class_<PySelectionGroup>(m, "SelectionGroup")
@@ -597,6 +641,7 @@ namespace lfs::python {
             // Data accessors
             .def("splat_data", &PySceneNode::splat_data, "Get SplatData for SPLAT nodes (None otherwise)")
             .def("point_cloud", &PySceneNode::point_cloud, "Get PointCloud for POINTCLOUD nodes (None otherwise)")
+            .def("mesh", &PySceneNode::mesh, "Get MeshInfo for MESH nodes (None otherwise)")
             .def("cropbox", &PySceneNode::cropbox, "Get CropBox for CROPBOX nodes (None otherwise)")
             .def("ellipsoid", &PySceneNode::ellipsoid, "Get Ellipsoid for ELLIPSOID nodes (None otherwise)")
             // Camera specific (read-only)
@@ -690,6 +735,14 @@ Returns:
                  nb::arg("colors"),
                  nb::arg("parent") = core::NULL_NODE,
                  "Add a point cloud node from tensor data [N,3] positions and colors")
+            .def("add_mesh", &PyScene::add_mesh,
+                 nb::arg("name"),
+                 nb::arg("vertices"),
+                 nb::arg("indices"),
+                 nb::arg("colors") = nb::none(),
+                 nb::arg("normals") = nb::none(),
+                 nb::arg("parent") = core::NULL_NODE,
+                 "Add a mesh node from [V,3] vertices, [F,3] face indices, optional [V,4] colors and [V,3] normals")
             .def("add_camera_group", &PyScene::add_camera_group,
                  nb::arg("name"),
                  nb::arg("parent"),

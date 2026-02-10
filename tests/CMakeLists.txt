@@ -209,6 +209,8 @@ set(TEST_FILES
     test_mcmc_nan_fix.cpp
     test_vram_resize.cpp
     test_stride_bugs.cpp
+    test_strided_fill.cpp
+    test_expanded_tensor_ops.cpp
     test_bool_any_all.cpp
     test_fused_l1_ssim.cpp
     test_add_new_gs_tensor_ops.cpp
@@ -240,6 +242,9 @@ set(TEST_FILES
     test_ppisp_cuda_vs_torch.cpp
     test_controller_memory.cpp
     test_undistort.cpp
+    test_mesh_data.cpp
+    test_openmesh_bridge.cpp
+    test_mesh_loader.cpp
 )
 
 # Build test sources list
@@ -318,6 +323,8 @@ target_link_libraries(lichtfeld_tests PRIVATE
     ${TORCH_LIBRARIES}
     ${OPENGL_LIBRARIES}
     OpenImageIO::OpenImageIO
+    OpenMeshCore
+    assimp::assimp
 
     # CUDA libraries
     CUDA::cudart

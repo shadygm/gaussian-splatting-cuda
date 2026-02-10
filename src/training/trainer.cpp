@@ -420,10 +420,8 @@ namespace lfs::training {
         LOG_DEBUG("Trainer constructed with {} cameras", base_dataset_->get_cameras().size());
     }
 
-    // New constructor - Scene owns all data
     Trainer::Trainer(lfs::core::Scene& scene)
         : scene_(&scene) {
-        // Check CUDA availability
         int device_count = 0;
         cudaError_t error = cudaGetDeviceCount(&device_count);
         if (error != cudaSuccess || device_count == 0) {
@@ -1341,6 +1339,11 @@ namespace lfs::training {
                         corrected_image = ppisp_->apply(corrected_image, cam->camera_id(), cam->uid());
                         nvtxRangePop();
                     }
+
+                    // Final tonemapping: clamp to [0, 1] for loss computation.
+                    // This is redundant when PPISP is active (CRF already clamps), but ensures
+                    // valid output range for bilateral grids and raw rasterizer output.
+                    corrected_image = corrected_image.clamp(0.0f, 1.0f);
 
                     nvtxRangePush("compute_photometric_loss");
                     lfs::core::Tensor tile_loss;

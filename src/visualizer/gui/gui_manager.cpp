@@ -426,6 +426,7 @@ namespace lfs::vis::gui {
     }
 
     void GuiManager::shutdown() {
+        lfs::python::shutdown_python_gl_resources();
         panel_layout_.saveState();
 
         if (video_extraction_thread_ && video_extraction_thread_->joinable())
@@ -948,6 +949,7 @@ namespace lfs::vis::gui {
 
         ui::FileDropReceived::when([this](const auto&) {
             startup_overlay_.dismiss();
+            drag_drop_.resetHovering();
         });
 
         cmd::ShowWindow::when([this](const auto& e) {

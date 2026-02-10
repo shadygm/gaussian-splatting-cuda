@@ -438,16 +438,6 @@ namespace lfs::vis {
         cmd::Undo::when([this](const auto&) { undo(); });
         cmd::Redo::when([this](const auto&) { redo(); });
 
-        // Selection operations (require command_history_ and tools)
-        cmd::DeleteSelected::when([this](const auto&) { deleteSelectedGaussians(); });
-        cmd::InvertSelection::when([this](const auto&) { invertSelection(); });
-        cmd::DeselectAll::when([this](const auto&) { deselectAll(); });
-        cmd::SelectAll::when([this](const auto&) { selectAll(); });
-        cmd::CopySelection::when([this](const auto&) { copySelection(); });
-        cmd::PasteSelection::when([this](const auto&) { pasteSelection(); });
-        cmd::SelectRect::when([this](const auto& e) { selectRect(e.x0, e.y0, e.x1, e.y1, e.mode); });
-        cmd::ApplySelectionMask::when([this](const auto& e) { applySelectionMask(e.mask); });
-
         // NOTE: ui::RenderSettingsChanged, ui::CameraMove, state::SceneChanged,
         // ui::PointCloudModeChanged are handled by RenderingManager::setupEventHandlers()
 
@@ -568,10 +558,6 @@ namespace lfs::vis {
 
         state::SceneCleared::when([](const auto&) {
             python::update_scene(false, "");
-        });
-
-        state::SelectionChanged::when([](const auto& event) {
-            python::update_selection(event.has_selection, event.count);
         });
     }
 
@@ -726,6 +712,15 @@ namespace lfs::vis {
                     proxy.apply_appearance_correction = s.apply_appearance_correction;
                     proxy.ppisp_mode = static_cast<int>(s.ppisp_mode);
                     proxy.ppisp = s.ppisp_overrides;
+                    proxy.mesh_wireframe = s.mesh_wireframe;
+                    proxy.mesh_wireframe_color = {s.mesh_wireframe_color.r, s.mesh_wireframe_color.g, s.mesh_wireframe_color.b};
+                    proxy.mesh_wireframe_width = s.mesh_wireframe_width;
+                    proxy.mesh_light_dir = {s.mesh_light_dir.x, s.mesh_light_dir.y, s.mesh_light_dir.z};
+                    proxy.mesh_light_intensity = s.mesh_light_intensity;
+                    proxy.mesh_ambient = s.mesh_ambient;
+                    proxy.mesh_backface_culling = s.mesh_backface_culling;
+                    proxy.mesh_shadow_enabled = s.mesh_shadow_enabled;
+                    proxy.mesh_shadow_resolution = s.mesh_shadow_resolution;
                     return proxy;
                 },
                 [this](const vis::RenderSettingsProxy& proxy) {
@@ -772,6 +767,15 @@ namespace lfs::vis {
                     s.apply_appearance_correction = proxy.apply_appearance_correction;
                     s.ppisp_mode = static_cast<vis::RenderSettings::PPISPMode>(proxy.ppisp_mode);
                     s.ppisp_overrides = proxy.ppisp;
+                    s.mesh_wireframe = proxy.mesh_wireframe;
+                    s.mesh_wireframe_color = glm::vec3(proxy.mesh_wireframe_color[0], proxy.mesh_wireframe_color[1], proxy.mesh_wireframe_color[2]);
+                    s.mesh_wireframe_width = proxy.mesh_wireframe_width;
+                    s.mesh_light_dir = glm::vec3(proxy.mesh_light_dir[0], proxy.mesh_light_dir[1], proxy.mesh_light_dir[2]);
+                    s.mesh_light_intensity = proxy.mesh_light_intensity;
+                    s.mesh_ambient = proxy.mesh_ambient;
+                    s.mesh_backface_culling = proxy.mesh_backface_culling;
+                    s.mesh_shadow_enabled = proxy.mesh_shadow_enabled;
+                    s.mesh_shadow_resolution = proxy.mesh_shadow_resolution;
                     rendering_manager_->updateSettings(s);
                 });
 
@@ -797,11 +801,9 @@ namespace lfs::vis {
                 });
         }
 
-        // Create selection service
-        if (!selection_service_) {
-            selection_service_ = std::make_unique<SelectionService>(scene_manager_.get(), rendering_manager_.get());
-            python::set_selection_service(selection_service_.get());
-        }
+        // Initialize selection service in SceneManager (needs RenderingManager)
+        if (scene_manager_)
+            scene_manager_->initSelectionService();
 
         fully_initialized = true;
         return true;
@@ -1024,211 +1026,6 @@ namespace lfs::vis {
         if (rendering_manager_) {
             rendering_manager_->markDirty();
         }
-    }
-
-    void VisualizerImpl::deleteSelectedGaussians() {
-        if (!scene_manager_)
-            return;
-
-        auto& scene = scene_manager_->getScene();
-        auto selection = scene.getSelectionMask();
-
-        if (!selection || !selection->is_valid()) {
-            LOG_INFO("No Gaussians selected to delete");
-            return;
-        }
-
-        auto nodes = scene.getVisibleNodes();
-        if (nodes.empty())
-            return;
-
-        auto entry = std::make_unique<op::SceneSnapshot>(*scene_manager_, "edit.delete");
-        entry->captureTopology();
-        entry->captureSelection();
-
-        size_t offset = 0;
-        bool any_deleted = false;
-
-        for (const auto* node : nodes) {
-            if (!node || !node->model)
-                continue;
-
-            const size_t node_size = node->model->size();
-            if (node_size == 0)
-                continue;
-
-            auto node_selection = selection->slice(0, offset, offset + node_size);
-            auto bool_mask = node_selection.to(lfs::core::DataType::Bool);
-            node->model->soft_delete(bool_mask);
-
-            any_deleted = true;
-            offset += node_size;
-        }
-
-        if (any_deleted) {
-            LOG_INFO("Deleted selected Gaussians");
-            scene.markDirty();
-            scene.clearSelection();
-
-            entry->captureAfter();
-            op::undoHistory().push(std::move(entry));
-
-            if (rendering_manager_) {
-                rendering_manager_->markDirty();
-            }
-        }
-    }
-
-    void VisualizerImpl::invertSelection() {
-        if (!scene_manager_)
-            return;
-        auto& scene = scene_manager_->getScene();
-        const size_t total = scene.getTotalGaussianCount();
-        if (total == 0)
-            return;
-
-        auto entry = std::make_unique<op::SceneSnapshot>(*scene_manager_, "select.invert");
-        entry->captureSelection();
-
-        const auto old_mask = scene.getSelectionMask();
-        const auto ones = lfs::core::Tensor::ones({total}, lfs::core::Device::CUDA, lfs::core::DataType::UInt8);
-        auto new_mask = std::make_shared<lfs::core::Tensor>(
-            (old_mask && old_mask->is_valid()) ? ones - *old_mask : ones);
-
-        scene.setSelectionMask(new_mask);
-
-        entry->captureAfter();
-        op::undoHistory().push(std::move(entry));
-
-        if (rendering_manager_)
-            rendering_manager_->markDirty();
-    }
-
-    void VisualizerImpl::deselectAll() {
-        if (!scene_manager_)
-            return;
-        auto& scene = scene_manager_->getScene();
-        if (!scene.hasSelection())
-            return;
-
-        auto entry = std::make_unique<op::SceneSnapshot>(*scene_manager_, "select.none");
-        entry->captureSelection();
-
-        scene.clearSelection();
-
-        entry->captureAfter();
-        op::undoHistory().push(std::move(entry));
-
-        if (rendering_manager_)
-            rendering_manager_->markDirty();
-    }
-
-    void VisualizerImpl::selectAll() {
-        if (!scene_manager_)
-            return;
-
-        const auto tool = editor_context_.getActiveTool();
-        const bool is_selection_tool = (tool == ToolType::Selection || tool == ToolType::Brush);
-
-        if (is_selection_tool) {
-            auto& scene = scene_manager_->getScene();
-            const size_t total = scene.getTotalGaussianCount();
-            if (total == 0)
-                return;
-
-            const auto& selected_name = scene_manager_->getSelectedNodeName();
-            if (selected_name.empty())
-                return;
-
-            const int node_index = scene.getVisibleNodeIndex(selected_name);
-            if (node_index < 0)
-                return;
-
-            const auto transform_indices = scene.getTransformIndices();
-            if (!transform_indices || transform_indices->numel() != total)
-                return;
-
-            auto entry = std::make_unique<op::SceneSnapshot>(*scene_manager_, "select.all");
-            entry->captureSelection();
-
-            auto new_mask = std::make_shared<lfs::core::Tensor>(transform_indices->eq(node_index));
-            scene.setSelectionMask(new_mask);
-
-            entry->captureAfter();
-            op::undoHistory().push(std::move(entry));
-        } else {
-            const auto& scene = scene_manager_->getScene();
-            const auto nodes = scene.getNodes();
-            std::vector<std::string> splat_names;
-            splat_names.reserve(nodes.size());
-            for (const auto* node : nodes) {
-                if (node->type == core::NodeType::SPLAT) {
-                    splat_names.push_back(node->name);
-                }
-            }
-            if (!splat_names.empty()) {
-                scene_manager_->selectNodes(splat_names);
-            }
-        }
-        if (rendering_manager_)
-            rendering_manager_->markDirty();
-    }
-
-    void VisualizerImpl::copySelection() {
-        if (!scene_manager_)
-            return;
-
-        const auto tool = editor_context_.getActiveTool();
-        const bool is_selection_tool = (tool == ToolType::Selection || tool == ToolType::Brush);
-
-        if (is_selection_tool && scene_manager_->getScene().hasSelection()) {
-            scene_manager_->copySelectedGaussians();
-        } else {
-            scene_manager_->copySelectedNodes();
-        }
-    }
-
-    void VisualizerImpl::pasteSelection() {
-        if (!scene_manager_)
-            return;
-
-        const auto pasted = scene_manager_->hasGaussianClipboard()
-                                ? scene_manager_->pasteGaussians()
-                                : scene_manager_->pasteNodes();
-
-        if (pasted.empty())
-            return;
-
-        // Selection tool state is managed by Python operator
-        scene_manager_->getScene().resetSelectionState();
-
-        scene_manager_->clearSelection();
-        for (const auto& name : pasted) {
-            scene_manager_->addToSelection(name);
-        }
-
-        if (rendering_manager_)
-            rendering_manager_->markDirty();
-    }
-
-    void VisualizerImpl::selectRect(float x0, float y0, float x1, float y1, const std::string& mode) {
-        if (!selection_service_)
-            return;
-
-        SelectionMode sel_mode = SelectionMode::Replace;
-        if (mode == "add")
-            sel_mode = SelectionMode::Add;
-        else if (mode == "remove")
-            sel_mode = SelectionMode::Remove;
-
-        selection_service_->selectRect(x0, y0, x1, y1, sel_mode);
-    }
-
-    void VisualizerImpl::applySelectionMask(const std::vector<uint8_t>& mask) {
-        if (!selection_service_)
-            return;
-
-        selection_service_->applyMask(mask, SelectionMode::Replace);
     }
 
     void VisualizerImpl::run() {

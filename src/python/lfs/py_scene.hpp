@@ -6,6 +6,7 @@
 
 #include "core/camera.hpp"
 #include "core/events.hpp"
+#include "core/mesh_data.hpp"
 #include "core/scene.hpp"
 #include "py_prop.hpp"
 #include "py_splat_data.hpp"
@@ -21,11 +22,9 @@ namespace nb = nanobind;
 
 namespace lfs::python {
 
-    // Forward declarations
     class PyScene;
     class PyCameraDataset;
 
-    // Selection group view (read-only)
     struct PySelectionGroup {
         uint8_t id;
         std::string name;
@@ -112,7 +111,6 @@ namespace lfs::python {
         PyProp<core::EllipsoidData> prop_;
     };
 
-    // PointCloud wrapper
     class PyPointCloud {
     public:
         explicit PyPointCloud(core::PointCloud* pc, bool owns = false,
@@ -185,7 +183,21 @@ namespace lfs::python {
         core::Scene* scene_ = nullptr;
     };
 
-    // Scene node wrapper
+    class PyMeshInfo {
+    public:
+        explicit PyMeshInfo(std::shared_ptr<core::MeshData> mesh) : mesh_(std::move(mesh)) {
+            assert(mesh_);
+        }
+
+        int64_t vertex_count() const { return mesh_->vertex_count(); }
+        int64_t face_count() const { return mesh_->face_count(); }
+        bool has_normals() const { return mesh_->has_normals(); }
+        bool has_texcoords() const { return mesh_->has_texcoords(); }
+
+    private:
+        std::shared_ptr<core::MeshData> mesh_;
+    };
+
     class PySceneNode {
     public:
         PySceneNode(core::SceneNode* node, core::Scene* scene)
@@ -196,7 +208,6 @@ namespace lfs::python {
             assert(scene_ != nullptr);
         }
 
-        // Identity (read-only, not in prop system)
         int32_t id() const { return node_->id; }
         int32_t parent_id() const { return node_->parent_id; }
         std::vector<int32_t> children() const { return node_->children; }
@@ -215,6 +226,7 @@ namespace lfs::python {
         // Data accessors
         std::optional<PySplatData> splat_data();
         std::optional<PyPointCloud> point_cloud();
+        std::optional<PyMeshInfo> mesh();
         std::optional<PyCropBox> cropbox();
         std::optional<PyEllipsoid> ellipsoid();
 
@@ -288,7 +300,7 @@ namespace lfs::python {
             for (const char* attr : {"id", "parent_id", "children", "type",
                                      "world_transform", "set_local_transform",
                                      "gaussian_count", "centroid",
-                                     "splat_data", "point_cloud", "cropbox", "ellipsoid",
+                                     "splat_data", "point_cloud", "mesh", "cropbox", "ellipsoid",
                                      "camera_uid", "image_path", "mask_path", "has_camera",
                                      "has_mask", "load_mask",
                                      "camera_R", "camera_T", "camera_focal_x", "camera_focal_y",
@@ -389,6 +401,12 @@ namespace lfs::python {
                                 const PyTensor& points,
                                 const PyTensor& colors,
                                 int32_t parent = core::NULL_NODE);
+        int32_t add_mesh(const std::string& name,
+                         const PyTensor& vertices,
+                         const PyTensor& indices,
+                         std::optional<PyTensor> colors = std::nullopt,
+                         std::optional<PyTensor> normals = std::nullopt,
+                         int32_t parent = core::NULL_NODE);
         int32_t add_camera_group(const std::string& name, int32_t parent, size_t camera_count);
         int32_t add_camera(const std::string& name,
                            int32_t parent,
@@ -449,21 +467,11 @@ namespace lfs::python {
 
         // Selection (auto-invalidate + redraw for UI update)
         std::optional<PyTensor> selection_mask() const;
-        void set_selection(const std::vector<size_t>& indices) {
-            scene_->setSelection(indices);
-            scene_->invalidateCache();
-            core::events::state::SceneChanged{}.emit();
-        }
+        void set_selection(const std::vector<size_t>& indices) { scene_->setSelection(indices); }
         void set_selection_mask(const PyTensor& mask) {
             scene_->setSelectionMask(std::make_shared<core::Tensor>(mask.tensor()));
-            scene_->invalidateCache();
-            core::events::state::SceneChanged{}.emit();
         }
-        void clear_selection() {
-            scene_->clearSelection();
-            scene_->invalidateCache();
-            core::events::state::SceneChanged{}.emit();
-        }
+        void clear_selection() { scene_->clearSelection(); }
         bool has_selection() const { return scene_->hasSelection(); }
 
         // Selection groups
@@ -487,16 +495,8 @@ namespace lfs::python {
         }
         std::vector<PySelectionGroup> selection_groups() const;
         void update_selection_group_counts() { scene_->updateSelectionGroupCounts(); }
-        void clear_selection_group(uint8_t id) {
-            scene_->clearSelectionGroup(id);
-            scene_->invalidateCache();
-            core::events::state::SceneChanged{}.emit();
-        }
-        void reset_selection_state() {
-            scene_->resetSelectionState();
-            scene_->invalidateCache();
-            core::events::state::SceneChanged{}.emit();
-        }
+        void clear_selection_group(uint8_t id) { scene_->clearSelectionGroup(id); }
+        void reset_selection_state() { scene_->resetSelectionState(); }
 
         // Camera training control
         void set_camera_training_enabled(const std::string& name, bool enabled) {
@@ -517,10 +517,7 @@ namespace lfs::python {
         // Operations
         size_t apply_deleted() { return scene_->applyDeleted(); }
         void invalidate_cache() { scene_->invalidateCache(); }
-        void notify_changed() {
-            scene_->invalidateCache();
-            core::events::state::SceneChanged{}.emit();
-        }
+        void notify_changed() { scene_->notifyMutation(core::Scene::MutationType::MODEL_CHANGED); }
         std::string duplicate_node(const std::string& name) {
             return scene_->duplicateNode(name);
         }
