@@ -9,6 +9,7 @@
 #include "io/error.hpp"
 #include "tinyply.hpp"
 #include <algorithm>
+#include <cassert>
 #include <charconv>
 #include <chrono>
 #include <cmath>
@@ -355,10 +356,10 @@ namespace lfs::io {
             __cpuid(cpuInfo, 7);
             has_avx2 = (cpuInfo[1] & (1 << 5)) != 0;
 #elif defined(__GNUC__) || defined(__clang__)
-            __builtin_cpu_init();
-            has_avx2 = __builtin_cpu_supports("avx2");
+                __builtin_cpu_init();
+                has_avx2 = __builtin_cpu_supports("avx2");
 #else
-            has_avx2 = false;
+                has_avx2 = false;
 #endif
         });
 
@@ -691,12 +692,14 @@ namespace lfs::io {
             tinyply::PlyFile ply;
             const size_t N = pc.means.size(0);
 
-            std::vector<Tensor> float_tensors;
-            float_tensors.reserve(8);
-            float_tensors.push_back(pc.means.cpu().contiguous());
+            using TensorWithNames = std::pair<Tensor, std::vector<std::string>>;
+            std::vector<TensorWithNames> float_blocks;
+            float_blocks.reserve(8);
+            float_blocks.emplace_back(pc.means.cpu().contiguous(), std::vector<std::string>{"x", "y", "z"});
 
             if (pc.normals.is_valid()) {
-                float_tensors.push_back(pc.normals.cpu().contiguous());
+                float_blocks.emplace_back(pc.normals.cpu().contiguous(),
+                                          std::vector<std::string>{"nx", "ny", "nz"});
             }
 
             auto process_sh = [](const Tensor& sh) -> Tensor {
@@ -707,16 +710,24 @@ namespace lfs::io {
                 return sh.cpu().contiguous();
             };
 
-            if (pc.sh0.is_valid())
-                float_tensors.push_back(process_sh(pc.sh0));
-            if (pc.shN.is_valid())
-                float_tensors.push_back(process_sh(pc.shN));
+            if (pc.sh0.is_valid()) {
+                auto t = process_sh(pc.sh0);
+                float_blocks.emplace_back(t, make_indexed_names("f_dc_", static_cast<size_t>(t.size(1))));
+            }
+            if (pc.shN.is_valid()) {
+                auto t = process_sh(pc.shN);
+                float_blocks.emplace_back(t, make_indexed_names("f_rest_", static_cast<size_t>(t.size(1))));
+            }
             if (pc.opacity.is_valid())
-                float_tensors.push_back(pc.opacity.cpu().contiguous());
-            if (pc.scaling.is_valid())
-                float_tensors.push_back(pc.scaling.cpu().contiguous());
-            if (pc.rotation.is_valid())
-                float_tensors.push_back(pc.rotation.cpu().contiguous());
+                float_blocks.emplace_back(pc.opacity.cpu().contiguous(), std::vector<std::string>{"opacity"});
+            if (pc.scaling.is_valid()) {
+                auto t = pc.scaling.cpu().contiguous();
+                float_blocks.emplace_back(t, make_indexed_names("scale_", static_cast<size_t>(t.size(1))));
+            }
+            if (pc.rotation.is_valid()) {
+                auto t = pc.rotation.cpu().contiguous();
+                float_blocks.emplace_back(t, make_indexed_names("rot_", static_cast<size_t>(t.size(1))));
+            }
 
             // Optional colors: write as uchar red/green/blue
             Tensor colors_u8;
@@ -734,26 +745,21 @@ namespace lfs::io {
 
                     ply.add_properties_to_element(
                         "vertex", {"red", "green", "blue"}, tinyply::Type::UINT8, N,
-                        reinterpret_cast<uint8_t*>(const_cast<uint8_t*>(colors_u8.ptr<uint8_t>())),
+                        const_cast<uint8_t*>(colors_u8.ptr<uint8_t>()),
                         tinyply::Type::INVALID, 0);
                 }
             }
 
             size_t attr_off = 0;
-            auto add_float_block = [&](const Tensor& t, std::vector<std::string> fallback_names) {
+            for (auto& [t, fallback_names] : float_blocks) {
                 const size_t cols = t.size(1);
+                assert(fallback_names.size() == cols);
 
                 std::vector<std::string> attrs;
                 if (pc.attribute_names.size() >= attr_off + cols) {
                     attrs.assign(pc.attribute_names.begin() + static_cast<int64_t>(attr_off),
                                  pc.attribute_names.begin() + static_cast<int64_t>(attr_off + cols));
                 } else {
-                    if (fallback_names.size() != cols) {
-                        fallback_names.clear();
-                        fallback_names.reserve(cols);
-                        for (size_t i = 0; i < cols; ++i)
-                            fallback_names.emplace_back("attr_" + std::to_string(attr_off + i));
-                    }
                     attrs = std::move(fallback_names);
                 }
 
@@ -763,38 +769,6 @@ namespace lfs::io {
                     tinyply::Type::INVALID, 0);
 
                 attr_off += cols;
-            };
-
-            // Add float properties in the same order as existing attribute_names conventions
-            if (!float_tensors.empty()) {
-                add_float_block(float_tensors[0], {"x", "y", "z"});
-            }
-            size_t float_tensor_idx = 1;
-            if (pc.normals.is_valid() && float_tensor_idx < float_tensors.size()) {
-                add_float_block(float_tensors[float_tensor_idx++], {"nx", "ny", "nz"});
-            }
-            if (pc.sh0.is_valid() && float_tensor_idx < float_tensors.size()) {
-                const auto& t = float_tensors[float_tensor_idx];
-                add_float_block(t, make_indexed_names("f_dc_", static_cast<size_t>(t.size(1))));
-                ++float_tensor_idx;
-            }
-            if (pc.shN.is_valid() && float_tensor_idx < float_tensors.size()) {
-                const auto& t = float_tensors[float_tensor_idx];
-                add_float_block(t, make_indexed_names("f_rest_", static_cast<size_t>(t.size(1))));
-                ++float_tensor_idx;
-            }
-            if (pc.opacity.is_valid() && float_tensor_idx < float_tensors.size()) {
-                add_float_block(float_tensors[float_tensor_idx++], {"opacity"});
-            }
-            if (pc.scaling.is_valid() && float_tensor_idx < float_tensors.size()) {
-                const auto& t = float_tensors[float_tensor_idx];
-                add_float_block(t, make_indexed_names("scale_", static_cast<size_t>(t.size(1))));
-                ++float_tensor_idx;
-            }
-            if (pc.rotation.is_valid() && float_tensor_idx < float_tensors.size()) {
-                const auto& t = float_tensors[float_tensor_idx];
-                add_float_block(t, make_indexed_names("rot_", static_cast<size_t>(t.size(1))));
-                ++float_tensor_idx;
             }
 
             std::filebuf fb;

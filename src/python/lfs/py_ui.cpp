@@ -13,8 +13,8 @@
 #include "core/scene.hpp"
 #include "gui/ui_widgets.hpp"
 #include "gui/utils/windows_utils.hpp"
-#include "io/exporter.hpp"
 #include "internal/resource_paths.hpp"
+#include "io/exporter.hpp"
 #include "py_gizmo.hpp"
 #include "py_keymap.hpp"
 #include "py_params.hpp"
@@ -3287,7 +3287,8 @@ namespace lfs::python {
                                  {0, 0}, {u1, v1}, t, {0, 0, 0, 0});
                 },
                 nb::arg("texture"), nb::arg("size"), nb::arg("tint") = nb::none(), "Draw a DynamicTexture with automatic UV scaling")
-            .def("image_tensor", [](PyUILayout& /*self*/, const std::string& label, PyTensor& tensor, std::tuple<float, float> size, nb::object tint) {
+            .def(
+                "image_tensor", [](PyUILayout& /*self*/, const std::string& label, PyTensor& tensor, std::tuple<float, float> size, nb::object tint) {
                     PyDynamicTexture* tex_ptr = nullptr;
                     {
                         std::lock_guard lock(g_dynamic_textures_mutex);
@@ -3932,31 +3933,31 @@ namespace lfs::python {
 
                 const lfs::io::PlySaveOptions options{
                     .output_path = path,
-                    .binary = false,
+                    .binary = true,
                     .async = false};
 
                 lfs::io::Result<void> result = std::unexpected(
                     lfs::io::Error{lfs::io::ErrorCode::INTERNAL_ERROR, "uninitialized"});
                 switch (node->type) {
-                    case lfs::core::NodeType::POINTCLOUD: {
-                        if (!node->point_cloud || node->point_cloud->size() <= 0) {
-                            LOG_WARN("save_node_to_disk: point cloud '{}' has no data", node_name);
-                            return;
-                        }
-                        result = lfs::io::save_ply(*node->point_cloud, options);
-                        break;
-                    }
-                    case lfs::core::NodeType::SPLAT: {
-                        if (!node->model || node->model->size() <= 0) {
-                            LOG_WARN("save_node_to_disk: splat '{}' has no data", node_name);
-                            return;
-                        }
-                        result = lfs::io::save_ply(*node->model, options);
-                        break;
-                    }
-                    default:
-                        LOG_WARN("save_node_to_disk: unsupported node type for '{}': {}", node_name, static_cast<int>(node->type));
+                case lfs::core::NodeType::POINTCLOUD: {
+                    if (!node->point_cloud || node->point_cloud->size() <= 0) {
+                        LOG_WARN("save_node_to_disk: point cloud '{}' has no data", node_name);
                         return;
+                    }
+                    result = lfs::io::save_ply(*node->point_cloud, options);
+                    break;
+                }
+                case lfs::core::NodeType::SPLAT: {
+                    if (!node->model || node->model->size() <= 0) {
+                        LOG_WARN("save_node_to_disk: splat '{}' has no data", node_name);
+                        return;
+                    }
+                    result = lfs::io::save_ply(*node->model, options);
+                    break;
+                }
+                default:
+                    LOG_WARN("save_node_to_disk: unsupported node type for '{}': {}", node_name, static_cast<int>(node->type));
+                    return;
                 }
 
                 if (!result) {
