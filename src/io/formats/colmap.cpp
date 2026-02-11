@@ -638,7 +638,6 @@ namespace lfs::io {
 
     // Searches for mask file matching image_name in mask folders (case-insensitive).
     // Priority: exact match, stem+ext (e.g., img.png), full+ext (e.g., img.jpg.png)
-    // Works on both case-sensitive (Linux) and case-insensitive (Windows, macOS) filesystems
     static std::filesystem::path find_mask_path(const std::filesystem::path& base_path,
                                                 const std::string& image_name) {
         const std::filesystem::path img_path = lfs::core::utf8_to_path(image_name);
