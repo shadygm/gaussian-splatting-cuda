@@ -604,55 +604,9 @@ namespace lfs::io {
     // -----------------------------------------------------------------------------
     namespace {
         constexpr std::array MASK_FOLDERS = {"masks", "mask", "segmentation"};
-        constexpr std::array MASK_EXTENSIONS = {".png", ".jpg", ".jpeg", ".PNG", ".JPG", ".JPEG", ".mask.png"};
+        constexpr std::array MASK_EXTENSIONS = {".png", ".jpg", ".jpeg", ".mask.png"};
     } // namespace
 
-    // Helper to convert string to lowercase
-    static std::string to_lower(const std::string& str) {
-        std::string result = str;
-        std::transform(result.begin(), result.end(), result.begin(),
-                       [](unsigned char c) { return std::tolower(c); });
-        return result;
-    }
-
-    // Case-insensitive relative path search in directory
-    // Handles subdirectories. Returns the actual path if found, empty otherwise.
-    static std::filesystem::path find_path_case_insensitive(const std::filesystem::path& base_dir,
-                                                             const std::filesystem::path& relative_path) {
-        if (!std::filesystem::exists(base_dir))
-            return {};
-        
-        std::filesystem::path current_dir = base_dir;
-        
-        // Decompose the relative path into components and match case-insensitively
-        for (const auto& component : relative_path) {
-            if (component == ".")
-                continue;
-            
-            std::string lower_component = to_lower(component.string());
-            
-            try {
-                bool found = false;
-                for (const auto& entry : std::filesystem::directory_iterator(current_dir)) {
-                    if (to_lower(entry.path().filename().string()) == lower_component) {
-                        current_dir = entry.path();
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found)
-                    return {};
-            } catch (const std::filesystem::filesystem_error&) {
-                return {};
-            }
-        }
-        
-        return std::filesystem::exists(current_dir) ? current_dir : std::filesystem::path{};
-    }
-
-    // Searches for mask file matching image_name in mask folders (case-insensitive).
-    // Priority: exact match, stem+ext (e.g., img.png), full+ext (e.g., img.jpg.png)
-    // Preserves subdirectory structure and works with all OS filesystems
     static std::filesystem::path find_mask_path(const std::filesystem::path& base_path,
                                                 const std::string& image_name) {
         const std::filesystem::path img_path = lfs::core::utf8_to_path(image_name);
@@ -660,33 +614,26 @@ namespace lfs::io {
 
         for (const auto& folder : MASK_FOLDERS) {
             const std::filesystem::path mask_dir = base_path / folder;
-            if (!std::filesystem::exists(mask_dir))
+            if (!safe_exists(mask_dir))
                 continue;
 
-            // Try exact match first (case-sensitive, for efficiency)
-            if (const auto exact = mask_dir / img_path; std::filesystem::exists(exact))
+            if (const auto exact = mask_dir / img_path; safe_exists(exact))
                 return exact;
 
-            // Try case-insensitive exact match with full path (preserves subdirectories)
-            auto case_insensitive_exact = find_path_case_insensitive(mask_dir, img_path);
-            if (!case_insensitive_exact.empty())
-                return case_insensitive_exact;
+            if (auto found = find_path_ci(mask_dir, img_path); !found.empty())
+                return found;
 
-            // Try with different extensions (case-insensitive, with subdirectories)
             for (const auto& ext : MASK_EXTENSIONS) {
                 std::filesystem::path target_path = stem_path;
                 target_path += ext;
-                auto found = find_path_case_insensitive(mask_dir, target_path);
-                if (!found.empty())
+                if (auto found = find_path_ci(mask_dir, target_path); !found.empty())
                     return found;
             }
 
-            // Try with full image path + extension (case-insensitive, with subdirectories)
             for (const auto& ext : MASK_EXTENSIONS) {
                 std::filesystem::path target_path = img_path;
                 target_path += ext;
-                auto found = find_path_case_insensitive(mask_dir, target_path);
-                if (!found.empty())
+                if (auto found = find_path_ci(mask_dir, target_path); !found.empty())
                     return found;
             }
         }
