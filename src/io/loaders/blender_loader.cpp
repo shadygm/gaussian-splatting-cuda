@@ -26,7 +26,7 @@ namespace lfs::io {
 
     namespace {
         constexpr std::array MASK_FOLDERS = {"masks", "mask", "segmentation"};
-        constexpr std::array MASK_EXTENSIONS = {".png", ".jpg", ".jpeg", ".PNG", ".JPG", ".JPEG", ".mask.png"};
+        constexpr std::array MASK_EXTENSIONS = {".png", ".jpg", ".jpeg", ".mask.png"};
     } // namespace
 
     // Helper to convert string to lowercase
