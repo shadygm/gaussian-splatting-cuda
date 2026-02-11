@@ -8,6 +8,7 @@
 #include "core/path_utils.hpp"
 #include "io/filesystem_utils.hpp"
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstring>
 #include <exception>

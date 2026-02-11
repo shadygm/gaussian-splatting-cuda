@@ -13,6 +13,8 @@
 #include <chrono>
 #include <filesystem>
 #include <format>
+#include <cctype>
+#include <algorithm>
 #include <fstream>
 #include <nlohmann/json.hpp>
 
