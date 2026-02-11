@@ -142,19 +142,32 @@ else()
 endif()
 if(NVIDIA_SMI)
     execute_process(
-            COMMAND ${NVIDIA_SMI} --query-gpu=compute_cap --format=csv,noheader
-            OUTPUT_VARIABLE DETECTED_COMPUTE_CAP
-            OUTPUT_STRIP_TRAILING_WHITESPACE
+        COMMAND ${NVIDIA_SMI} --query-gpu=compute_cap --format=csv,noheader
+        OUTPUT_VARIABLE DETECTED_COMPUTE_CAP
+        OUTPUT_STRIP_TRAILING_WHITESPACE
     )
     string(REGEX REPLACE "\n.*" "" DETECTED_COMPUTE_CAP "${DETECTED_COMPUTE_CAP}")
 
     message(STATUS "Detected GPU compute capability: ${DETECTED_COMPUTE_CAP}")
-    set(LichtFeld-Studio_CUDA_ARCH "native")
+
+    # CUDA 13 architecture normalization
+    if(DETECTED_COMPUTE_CAP VERSION_LESS 9.0)
+        # Ampere & Ada → use 80
+        set(LichtFeld-Studio_CUDA_ARCH "80")
+    elseif(DETECTED_COMPUTE_CAP VERSION_LESS 10.0)
+        # Hopper → 90
+        set(LichtFeld-Studio_CUDA_ARCH "90")
+    else()
+        # Blackwell and beyond
+        set(LichtFeld-Studio_CUDA_ARCH "100")
+    endif()
+
+    message(STATUS "Mapped CUDA architecture: ${LichtFeld-Studio_CUDA_ARCH}")
 else()
-    message(WARNING "nvidia-smi not found! We are likely in CI, default to 8.6.")
-    set(DETECTED_COMPUTE_CAP 8.6)
-    set(LichtFeld-Studio_CUDA_ARCH "86")
+    message(WARNING "nvidia-smi not found! Defaulting to 80.")
+    set(LichtFeld-Studio_CUDA_ARCH "80")
 endif()
+
 
 
 if(DEFINED TORCH_CUDA_ARCH_LIST)

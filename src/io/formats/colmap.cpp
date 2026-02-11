@@ -606,8 +606,39 @@ namespace lfs::io {
         constexpr std::array MASK_EXTENSIONS = {".png", ".jpg", ".jpeg", ".PNG", ".JPG", ".JPEG", ".mask.png"};
     } // namespace
 
-    // Searches for mask file matching image_name in mask folders.
+    // Helper to convert string to lowercase
+    static std::string to_lower(const std::string& str) {
+        std::string result = str;
+        std::transform(result.begin(), result.end(), result.begin(),
+                       [](unsigned char c) { return std::tolower(c); });
+        return result;
+    }
+
+    // Case-insensitive file search in directory
+    // Returns the actual file path if found, empty otherwise
+    static std::filesystem::path find_file_case_insensitive(const std::filesystem::path& dir,
+                                                            const std::string& filename) {
+        if (!std::filesystem::exists(dir))
+            return {};
+        
+        std::string lower_filename = to_lower(filename);
+        
+        try {
+            for (const auto& entry : std::filesystem::directory_iterator(dir)) {
+                if (to_lower(entry.path().filename().string()) == lower_filename) {
+                    return entry.path();
+                }
+            }
+        } catch (const std::filesystem::filesystem_error&) {
+            return {};
+        }
+        
+        return {};
+    }
+
+    // Searches for mask file matching image_name in mask folders (case-insensitive).
     // Priority: exact match, stem+ext (e.g., img.png), full+ext (e.g., img.jpg.png)
+    // Works on both case-sensitive (Linux) and case-insensitive (Windows, macOS) filesystems
     static std::filesystem::path find_mask_path(const std::filesystem::path& base_path,
                                                 const std::string& image_name) {
         const std::filesystem::path img_path = lfs::core::utf8_to_path(image_name);
@@ -618,21 +649,29 @@ namespace lfs::io {
             if (!std::filesystem::exists(mask_dir))
                 continue;
 
+            // Try exact match first (case-sensitive, for efficiency)
             if (const auto exact = mask_dir / img_path; std::filesystem::exists(exact))
                 return exact;
 
+            // Try case-insensitive exact match
+            auto case_insensitive_exact = find_file_case_insensitive(mask_dir, img_path.filename().string());
+            if (!case_insensitive_exact.empty())
+                return case_insensitive_exact;
+
+            // Try with different extensions (case-insensitive)
             for (const auto& ext : MASK_EXTENSIONS) {
-                auto path = mask_dir / stem_path;
-                path += ext;
-                if (std::filesystem::exists(path))
-                    return path;
+                std::string target_filename = stem_path.filename().string() + ext;
+                auto found = find_file_case_insensitive(mask_dir, target_filename);
+                if (!found.empty())
+                    return found;
             }
 
+            // Try with full image path + extension (case-insensitive)
             for (const auto& ext : MASK_EXTENSIONS) {
-                auto path = mask_dir / img_path;
-                path += ext;
-                if (std::filesystem::exists(path))
-                    return path;
+                std::string target_filename = img_path.filename().string() + ext;
+                auto found = find_file_case_insensitive(mask_dir, target_filename);
+                if (!found.empty())
+                    return found;
             }
         }
         return {};
