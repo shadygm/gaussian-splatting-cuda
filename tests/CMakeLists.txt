@@ -120,6 +120,7 @@ set(TEST_FILES
     test_mrnf_strategy.cpp
     test_sparsity_optimizer.cpp
     test_mcmc_tensor_ops.cpp
+    test_training_cropbox_mask.cpp
     test_tensor_index_select_uint8.cpp
     test_tensor_uint8_inversion.cpp
     test_tensor_uint8_masking.cpp
@@ -138,6 +139,8 @@ set(TEST_FILES
     test_densification_tensor_ops.cpp
     test_tensor_zero_dimension.cpp
     test_mask_loss.cpp
+    test_roi_weight_map.cpp
+    test_roi_weighted_losses.cpp
     test_checkpoint_resume.cpp
     test_atomic_output.cpp
     test_training_terminal_state.cpp
