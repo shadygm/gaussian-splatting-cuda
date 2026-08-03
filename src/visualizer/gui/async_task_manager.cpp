@@ -786,7 +786,9 @@ namespace lfs::vis::gui {
         });
 
         cmd::SequencerExportVideo::when([this](const auto& evt) {
-            const auto path = SaveMp4FileDialog("camera_path");
+            const auto path = evt.path.empty()
+                                  ? SaveMp4FileDialog("camera_path")
+                                  : std::filesystem::path(evt.path);
             if (path.empty())
                 return;
 

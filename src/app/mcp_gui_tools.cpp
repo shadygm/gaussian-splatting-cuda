@@ -4452,7 +4452,7 @@ namespace lfs::app {
                 .is_visible = []() { return python::is_sequencer_visible(); },
                 .set_visible = [](const bool visible) { python::set_sequencer_visible(visible); },
                 .ui_state = []() { return python::get_sequencer_ui_state(); },
-                .add_keyframe = []() { core::events::cmd::SequencerAddKeyframe{}.emit(); },
+                .add_keyframe = [](const std::optional<float> time) { core::events::cmd::SequencerAddKeyframe{.time = time}.emit(); },
                 .update_selected_keyframe = []() { core::events::cmd::SequencerUpdateKeyframe{}.emit(); },
                 .select_keyframe = [](const size_t index) { core::events::cmd::SequencerSelectKeyframe{.keyframe_index = index}.emit(); },
                 .go_to_keyframe = [](const size_t index) { core::events::cmd::SequencerGoToKeyframe{.keyframe_index = index}.emit(); },

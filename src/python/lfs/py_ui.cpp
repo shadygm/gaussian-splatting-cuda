@@ -3131,7 +3131,8 @@ namespace lfs::python {
                     self.image_uv(tex.texture_id(), size, {0.0f, 0.0f}, tex.uv1(), std::move(tint));
                 },
                 nb::arg("texture"), nb::arg("size"), nb::arg("tint") = nb::none(), "Draw a DynamicTexture with automatic UV scaling")
-            .def("image_tensor", [](PyUILayout& self, const std::string& label, PyTensor& tensor, std::tuple<float, float> size, nb::object tint) {
+            .def(
+                "image_tensor", [](PyUILayout& self, const std::string& label, PyTensor& tensor, std::tuple<float, float> size, nb::object tint) {
                     PyDynamicTexture* tex_ptr = nullptr;
                     {
                         std::lock_guard lock(g_dynamic_textures_mutex);
@@ -4545,16 +4546,19 @@ namespace lfs::python {
 
         m.def(
             "export_video",
-            [](int width, int height, int framerate, int crf) {
+            [](int width, int height, int framerate, int crf, const std::string& path) {
                 lfs::core::events::cmd::SequencerExportVideo{
                     .width = width,
                     .height = height,
                     .framerate = framerate,
-                    .crf = crf}
+                    .crf = crf,
+                    .path = path}
                     .emit();
             },
             nb::arg("width"), nb::arg("height"), nb::arg("framerate"), nb::arg("crf"),
-            "Export video with specified settings");
+            nb::arg("path") = std::string{},
+            "Export video with specified settings. Without a path a save dialog opens, "
+            "which a script cannot answer; pass one to export directly.");
 
         m.def(
             "add_keyframe",
