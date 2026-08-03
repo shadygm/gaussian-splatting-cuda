@@ -2760,7 +2760,6 @@ namespace lfs::vis {
                                      .exposure = frame_settings.environment_exposure,
                                      .rotation_degrees = frame_settings.environment_rotation_degrees,
                                      .equirectangular = frame_settings.equirectangular},
-                                .meshes = {},
                             };
                         };
 

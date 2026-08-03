@@ -3983,8 +3983,7 @@ namespace lfs::vis::gui {
             appendScreenOverlayCommandOverlays(params, rendering_manager->getScreenOverlayRenderer());
 
             // Pull GPU mesh / environment frame populated by renderVulkanFrame.
-            // vulkan_viewport_pass rasterizes these on the GPU instead of the
-            // auxiliary CPU mesh / environment paths.
+            // vulkan_viewport_pass rasterizes these on the GPU.
             auto mesh_frame = rendering_manager->getVulkanMeshFrame();
             params.mesh_view_projection = mesh_frame.view_projection;
             params.mesh_camera_position = mesh_frame.camera_position;
