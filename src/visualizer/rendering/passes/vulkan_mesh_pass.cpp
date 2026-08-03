@@ -204,7 +204,7 @@ namespace lfs::vis {
         // sampler2DShadow descriptor without the validation layer complaining.
         ShadowTarget shadow_dummy{};
 
-        std::unordered_map<const lfs::core::MeshData*, GpuMesh> mesh_cache;
+        std::unordered_map<std::uint64_t, GpuMesh> mesh_cache;
         std::uint64_t frame_counter = 0;
 
         ~Impl() { destroy(); }
@@ -2394,12 +2394,12 @@ namespace lfs::vis {
             for (const auto& item : params.items) {
                 if (!item.mesh)
                     continue;
-                auto it = mesh_cache.find(item.mesh);
+                auto it = mesh_cache.find(item.mesh->id());
                 if (it == mesh_cache.end()) {
                     GpuMesh gpu{};
                     if (uploadMesh(*item.mesh, gpu)) {
                         gpu.last_used_frame = frame_counter;
-                        mesh_cache.emplace(item.mesh, std::move(gpu));
+                        mesh_cache.emplace(item.mesh->id(), std::move(gpu));
                     }
                 } else if (it->second.generation != item.mesh->generation()) {
                     if (uploadMesh(*item.mesh, it->second)) {
@@ -2414,7 +2414,7 @@ namespace lfs::vis {
                 if (!item.mesh || !item.shadow_enabled || item.shadow_map_resolution <= 0) {
                     continue;
                 }
-                auto it = mesh_cache.find(item.mesh);
+                auto it = mesh_cache.find(item.mesh->id());
                 if (it == mesh_cache.end() || it->second.vertex_buffer == VK_NULL_HANDLE) {
                     continue;
                 }
@@ -2540,7 +2540,7 @@ namespace lfs::vis {
                 const auto& item = params.items[item_index];
                 if (!item.mesh)
                     continue;
-                auto it = mesh_cache.find(item.mesh);
+                auto it = mesh_cache.find(item.mesh->id());
                 if (it == mesh_cache.end() || it->second.vertex_buffer == VK_NULL_HANDLE) {
                     continue;
                 }
