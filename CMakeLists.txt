@@ -397,6 +397,7 @@ if(BUILD_CUDA_PTX_ONLY)
     endif()
 
     set(LichtFeld-Studio_CUDA_ARCH "${BUILD_CUDA_MIN_SM}-virtual")
+    set(LFS_RUNTIME_MIN_SM "${BUILD_CUDA_MIN_SM}")
 
     math(EXPR _maj "${BUILD_CUDA_MIN_SM}/10")
     math(EXPR _min "${BUILD_CUDA_MIN_SM}%10")
@@ -406,8 +407,16 @@ if(BUILD_CUDA_PTX_ONLY)
 else()
     # Native GPU only
     set(TORCH_CUDA_ARCH_LIST "${DETECTED_COMPUTE_CAP}" CACHE STRING "" FORCE)
+    string(REPLACE "." "" LFS_RUNTIME_MIN_SM "${DETECTED_COMPUTE_CAP}")
     message(STATUS "CUDA: native (${LichtFeld-Studio_CUDA_ARCH})")
 endif()
+
+if(NOT LFS_RUNTIME_MIN_SM MATCHES "^[0-9]+$")
+    message(WARNING "Could not derive a runtime SM floor from '${LFS_RUNTIME_MIN_SM}'; "
+        "falling back to 70. The startup GPU check will be permissive.")
+    set(LFS_RUNTIME_MIN_SM "70")
+endif()
+message(STATUS "Runtime GPU floor: SM ${LFS_RUNTIME_MIN_SM}")
 
 enable_language(CUDA)
 find_package(CUDAToolkit 12.8 REQUIRED)
@@ -643,6 +652,10 @@ add_executable(${PROJECT_NAME}
     src/app/converter.cpp
     resources/lichtfeld-studio.rc
 )
+
+# The binary only carries code for these architectures; the app refuses to start on anything
+# lower instead of dying inside the first kernel launch (#1540).
+target_compile_definitions(${PROJECT_NAME} PRIVATE LFS_MIN_SM=${LFS_RUNTIME_MIN_SM})
 
 foreach(_lfs_git_version_consumer IN ITEMS
         ${PROJECT_NAME}
