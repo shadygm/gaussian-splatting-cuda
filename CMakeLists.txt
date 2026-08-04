@@ -93,6 +93,8 @@ endif()
 
 project(LichtFeld-Studio VERSION 0.5.3 LANGUAGES CUDA CXX C)
 
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/SelectFastLinker.cmake")
+
 # On Linux, hide symbols pulled in from third-party image / compression static
 # archives so they don't escape into the dynamic symbol tables of the binaries
 # we ship. Without this, every .so/exe we build re-exports e.g.
