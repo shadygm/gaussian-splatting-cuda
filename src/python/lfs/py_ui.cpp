@@ -4458,6 +4458,7 @@ namespace lfs::python {
                 state["active"] = export_state.active;
                 state["progress"] = export_state.progress;
                 state["stage"] = export_state.stage;
+                state["outcome"] = export_state.outcome;
                 state["format"] = export_state.format;
                 return state;
             },
@@ -4842,6 +4843,8 @@ namespace lfs::python {
                         if (auto* const gui_manager = get_gui_manager())
                             gui_manager->ensureCjkFontsLoaded();
                     lfs::vis::publish_language_generation();
+                    if (auto* const gui_manager = get_gui_manager())
+                        gui_manager->requestLocalizationUiRefresh();
                 }
             },
             nb::arg("lang_code"), "Set language by code (e.g., 'en', 'de')");
@@ -5299,9 +5302,8 @@ namespace lfs::python {
                     register_python_operator_to_cpp(cls);
                     std::string idname = get_class_id(cls);
                     std::string label = idname;
-                    if (nb::hasattr(cls, "label")) {
+                    if (nb::hasattr(cls, "label"))
                         label = nb::cast<std::string>(cls.attr("label"));
-                    }
                     register_python_property_group("operator." + idname, label, cls);
                 } else if (nb::cast<bool>(issubclass(cls, Menu_type))) {
                     PyMenuRegistry::instance().register_menu(cls);

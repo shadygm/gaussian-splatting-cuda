@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: GPL-3.0-or-later */
 
 #include "gui/rml_menu_bar.hpp"
+#include "core/event_bridge/localization_manager.hpp"
 #include "core/events.hpp"
 #include "core/logger.hpp"
 #include "core/services.hpp"
@@ -18,6 +19,7 @@
 #include "rendering/dirty_flags.hpp"
 #include "rendering/rendering_manager.hpp"
 #include "rendering/rendering_types.hpp"
+#include "visualizer/app_store.hpp"
 #include "window/window_manager.hpp"
 
 #include <RmlUi/Core.h>
@@ -714,24 +716,39 @@ namespace lfs::vis::gui {
             };
         };
 
+        const auto language_generation = lfs::vis::app_store().language_generation.get();
+        if (!has_navigation_tooltip_language_generation_ ||
+            language_generation != navigation_tooltip_language_generation_) {
+            auto& localization = lfs::event::LocalizationManager::getInstance();
+            navigation_tooltips_ = {
+                localization.get("toolbar.orbit_camera"),
+                localization.get("toolbar.free_orbit_camera"),
+                localization.get("toolbar.fly_camera"),
+                localization.get("toolbar.drone_camera"),
+            };
+            navigation_tooltip_language_generation_ = language_generation;
+            has_navigation_tooltip_language_generation_ = true;
+        }
+
         if (const auto* ic = lfs::vis::InputController::instance()) {
             using NavMode = lfs::vis::InputController::CameraNavigationMode;
             struct NavButtonSpec {
                 NavMode mode;
                 const char* icon;
-                const char* tooltip;
+                size_t tooltip_index;
             };
-            static constexpr NavButtonSpec kNavButtons[] = {
-                {NavMode::Orbit, "camera-orbit", "Orbit Camera"},
-                {NavMode::Trackball, "world", "Free Orbit Camera"},
-                {NavMode::FPV, "camera-fpv", "Fly Camera"},
-                {NavMode::Drone, "drone", "Drone Camera"},
+            const NavButtonSpec kNavButtons[] = {
+                {NavMode::Orbit, "camera-orbit", 0},
+                {NavMode::Trackball, "world", 1},
+                {NavMode::FPV, "camera-fpv", 2},
+                {NavMode::Drone, "drone", 3},
             };
             const auto mode = ic->cameraNavigationMode();
             for (const auto& spec : kNavButtons) {
                 const std::string name = lfs::vis::InputController::cameraNavigationModeName(spec.mode);
                 camera_buttons.push_back(make("menu-camera-" + name, "set_camera_navigation_mode", name,
-                                              spec.icon, "", spec.tooltip, mode == spec.mode));
+                                              spec.icon, "", navigation_tooltips_[spec.tooltip_index],
+                                              mode == spec.mode));
             }
         }
 
@@ -992,7 +1009,8 @@ namespace lfs::vis::gui {
             if (split_view != last_window_split_view_) {
                 menu_window_split_view_->SetClass("selected", split_view);
                 menu_window_split_view_->SetAttribute(
-                    "title", split_view ? "Exit Independent Split View" : "Independent Split View");
+                    "title", lfs::event::LocalizationManager::getInstance().get(
+                                 split_view ? "ui.exit_independent_split_view" : "ui.independent_split_view"));
                 last_window_split_view_ = split_view;
                 render_needed_ = true;
             }
@@ -1000,7 +1018,8 @@ namespace lfs::vis::gui {
 
         if (menu_window_toggle_ui_ && ui_hidden_ != last_ui_hidden_) {
             menu_window_toggle_ui_->SetClass("selected", ui_hidden_);
-            menu_window_toggle_ui_->SetAttribute("title", ui_hidden_ ? "Show UI" : "Hide UI");
+            menu_window_toggle_ui_->SetAttribute(
+                "title", lfs::event::LocalizationManager::getInstance().get(ui_hidden_ ? "ui.show_ui" : "ui.hide_ui"));
             last_ui_hidden_ = ui_hidden_;
             render_needed_ = true;
         }
@@ -1013,7 +1032,9 @@ namespace lfs::vis::gui {
             }();
             if (maximized != last_window_maximized_) {
                 menu_window_maximize_->SetClass("maximized", maximized);
-                menu_window_maximize_->SetAttribute("title", maximized ? "Restore Window" : "Maximize Window");
+                menu_window_maximize_->SetAttribute(
+                    "title", lfs::event::LocalizationManager::getInstance().get(
+                                 maximized ? "ui.restore_window" : "ui.maximize_window"));
                 last_window_maximized_ = maximized;
                 render_needed_ = true;
             }

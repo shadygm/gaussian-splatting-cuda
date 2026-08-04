@@ -3,6 +3,31 @@
 
 # Testing module - comprehensive tests for all components
 
+# =============================================================================
+# Headless localization contracts (no LibTorch/CUDA)
+# =============================================================================
+if(BUILD_LOCALIZATION_TESTS)
+    find_package(Python REQUIRED COMPONENTS Interpreter)
+    add_test(
+        NAME LocalizationContracts
+        COMMAND ${Python_EXECUTABLE}
+                ${CMAKE_SOURCE_DIR}/tests/python/test_localization_contracts.py
+    )
+    set_tests_properties(LocalizationContracts PROPERTIES
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        TIMEOUT 30
+    )
+    add_custom_target(test_localization_contracts
+        COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure -R LocalizationContracts
+        DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/CTestTestfile.cmake
+        USES_TERMINAL
+    )
+    message(STATUS "Registered headless localization contract tests (no LibTorch)")
+    if(NOT BUILD_TESTS AND NOT BUILD_UNICODE_TEST_ONLY)
+        return()
+    endif()
+endif()
+
 # Find GTest
 find_package(GTest CONFIG REQUIRED)
 
@@ -58,7 +83,9 @@ if(BUILD_UNICODE_TEST_ONLY)
     )
 
     message(STATUS "Building standalone Unicode path test (no CUDA)")
-    return()  # Skip the rest of the file
+    if(NOT BUILD_TESTS)
+        return()  # Skip LibTorch-dependent tests when only Unicode coverage was requested.
+    endif()
 endif()
 
 # Find LibTorch for tensor comparison tests

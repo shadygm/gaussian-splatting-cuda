@@ -97,6 +97,7 @@ namespace lfs::vis {
             bool active = false;
             float progress = 0.0f;
             std::string stage;
+            std::string outcome{"idle"};
             std::string format;
             std::string error;
             std::string path;
@@ -105,6 +106,7 @@ namespace lfs::vis {
                 return active == other.active &&
                        std::abs(progress - other.progress) <= 0.0005f &&
                        stage == other.stage &&
+                       outcome == other.outcome &&
                        format == other.format &&
                        error == other.error &&
                        path == other.path;

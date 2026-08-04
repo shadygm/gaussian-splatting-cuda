@@ -149,15 +149,17 @@ namespace lfs::vis::gui {
                 return state;
 
             if (stats.full_quality_reference) {
-                state.status_text = "Full quality reference";
+                state.status_text = LOC("runtime.lod_full_quality_reference");
             } else if (stats.active && stats.gpu_selection) {
-                state.status_text = "Active, GPU select";
+                state.status_text = LOC("runtime.lod_active_gpu_select");
             } else if (stats.active) {
-                state.status_text = stats.async_result_ready ? "Active, async ready" : "Active";
+                state.status_text = LOC(stats.async_result_ready ? "runtime.lod_active_async_ready"
+                                                                 : "runtime.lod_active");
             } else if (stats.has_tree || stats.available) {
-                state.status_text = stats.enabled ? "Waiting for frame" : "Tree loaded, off";
+                state.status_text = LOC(stats.enabled ? "runtime.lod_waiting_for_frame"
+                                                      : "runtime.lod_tree_loaded_off");
             } else {
-                state.status_text = stats.enabled ? "Enabled, no tree" : "No RAD LOD";
+                state.status_text = LOC(stats.enabled ? "runtime.lod_enabled_no_tree" : "runtime.lod_disabled");
             }
 
             const std::size_t selected = stats.selected_splats > 0 ? stats.selected_splats : stats.output_size;
@@ -271,8 +273,8 @@ namespace lfs::vis::gui {
                                                  formatLodFloat(stats.pixel_scale_limit),
                                                  formatLodFloat(stats.min_pixel_scale));
             state.render_text = stats.full_quality_reference
-                                    ? "leaf-only reference"
-                                    : std::format("LOD scale x{:.1f}", stats.lod_render_scale);
+                                    ? LOC("runtime.lod_leaf_only_reference")
+                                    : LOCF("runtime.lod_scale", stats.lod_render_scale);
             state.foveation_text = stats.gpu_selection
                                        ? std::format("cone {:.0f}/{:.0f} deg | edge x{:.2f} | behind x{:.2f}",
                                                      stats.cone_inner_degrees,
@@ -3679,6 +3681,10 @@ namespace lfs::vis::gui {
             rendering->markDirty(DirtyFlag::OVERLAY);
     }
 
+    void GuiManager::requestLocalizationUiRefresh() {
+        pending_localization_ui_refresh_ = true;
+    }
+
     bool GuiManager::shouldDeferDevResourceHotReload() const {
         if (rmlui_manager_.wantsTextInput() || rmlui_manager_.anyItemActive())
             return true;
@@ -4421,7 +4427,7 @@ namespace lfs::vis::gui {
         if (!cuda_unavailable_notified_ && lfs::core::cuda_is_unavailable()) {
             cuda_unavailable_notified_ = true;
             lfs::core::events::state::CudaUnavailable{
-                .message = "CUDA unavailable — GPU features disabled. A driver restart may be required."}
+                .message = LOC("runtime.cuda_unavailable_message")}
                 .emit();
         }
 
@@ -4527,6 +4533,20 @@ namespace lfs::vis::gui {
         if (should_poll_dev_resources) {
             LOG_TIMER_THRESHOLD("gui_render.panel_setup.dev_resource_poll", 0.25);
             pollDevResourceHotReload();
+        }
+
+        const auto language_generation = app_store().language_generation.get();
+        if (language_generation != localized_rml_language_generation_)
+            pending_localization_ui_refresh_ = true;
+
+        if (pending_localization_ui_refresh_) {
+            pending_localization_ui_refresh_ = false;
+            localized_rml_language_generation_ = language_generation;
+            ui_layout_settle_frames_ = std::max<uint8_t>(ui_layout_settle_frames_, 3);
+            if (rmlui_manager_.refreshLocalizedDocuments()) {
+                if (auto* const rendering = viewer_ ? viewer_->getRenderingManager() : nullptr)
+                    rendering->markDirty(DirtyFlag::OVERLAY);
+            }
         }
 
         // Hot-reload themes (check once per second)
@@ -6297,11 +6317,11 @@ namespace lfs::vis::gui {
 
         state::SplatFileLoadFailed::when([this](const auto& e) {
             lfs::core::ModalRequest req;
-            req.title = "Failed to load file";
+            req.title = LOC(lichtfeld::Strings::ErrorModal::FILE_OPEN_FAILED);
             req.body_rml = std::format(
-                "<div>Could not load <b>{}</b>:</div>"
+                "<div>{}</div>"
                 "<div class=\"content-row error-text\" style=\"margin-top: 8dp;\">{}</div>",
-                lfs::core::path_to_utf8(e.path.filename()),
+                LOCF(lichtfeld::Strings::Runtime::FILE_LOAD_FAILED_BODY, lfs::core::path_to_utf8(e.path.filename())),
                 e.error);
             req.style = lfs::core::ModalStyle::Error;
             req.width_dp = 520;

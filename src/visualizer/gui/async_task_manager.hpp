@@ -59,6 +59,10 @@ namespace lfs::vis {
                 std::lock_guard lock(export_state_.mutex);
                 return export_state_.stage;
             }
+            [[nodiscard]] std::string getExportOutcome() const {
+                std::lock_guard lock(export_state_.mutex);
+                return export_state_.outcome;
+            }
             [[nodiscard]] std::string getExportError() const {
                 std::lock_guard lock(export_state_.mutex);
                 return export_state_.error;
@@ -80,6 +84,10 @@ namespace lfs::vis {
             [[nodiscard]] std::string getImportStage() const {
                 std::lock_guard lock(import_state_.mutex);
                 return import_state_.stage;
+            }
+            [[nodiscard]] std::string getImportOutcome() const {
+                std::lock_guard lock(import_state_.mutex);
+                return import_state_.outcome;
             }
             [[nodiscard]] std::string getImportDatasetType() const {
                 std::lock_guard lock(import_state_.mutex);
@@ -125,6 +133,10 @@ namespace lfs::vis {
                 std::lock_guard lock(video_export_state_.mutex);
                 return video_export_state_.stage;
             }
+            [[nodiscard]] std::string getVideoExportOutcome() const {
+                std::lock_guard lock(video_export_state_.mutex);
+                return video_export_state_.outcome;
+            }
             [[nodiscard]] std::string getVideoExportError() const {
                 std::lock_guard lock(video_export_state_.mutex);
                 return video_export_state_.error;
@@ -145,6 +157,10 @@ namespace lfs::vis {
             [[nodiscard]] std::string getMesh2SplatStage() const {
                 std::lock_guard lock(mesh2splat_state_.mutex);
                 return mesh2splat_state_.stage;
+            }
+            [[nodiscard]] std::string getMesh2SplatOutcome() const {
+                std::lock_guard lock(mesh2splat_state_.mutex);
+                return mesh2splat_state_.outcome;
             }
             [[nodiscard]] std::string getMesh2SplatError() const {
                 std::lock_guard lock(mesh2splat_state_.mutex);
@@ -213,6 +229,7 @@ namespace lfs::vis {
                 std::atomic<float> progress{0.0f};
                 lfs::core::ExportFormat format{lfs::core::ExportFormat::PLY};
                 std::string stage;
+                std::string outcome{"idle"};
                 std::string error;
                 std::filesystem::path path;
                 bool rad_flip_y = false; // Y-flip for RAD export (off by default)
@@ -228,6 +245,7 @@ namespace lfs::vis {
                 std::atomic<int> current_frame{0};
                 std::atomic<int> total_frames{0};
                 std::string stage;
+                std::string outcome{"idle"};
                 std::string error;
                 std::filesystem::path path;
                 mutable std::mutex mutex;
@@ -245,6 +263,7 @@ namespace lfs::vis {
                 mutable std::mutex mutex;
                 std::filesystem::path path;
                 std::string stage;
+                std::string outcome{"idle"};
                 std::string dataset_type;
                 std::string error;
                 size_t num_images{0};
@@ -267,6 +286,7 @@ namespace lfs::vis {
                 std::atomic<float> progress{0.0f};
                 mutable std::mutex mutex;
                 std::string stage;
+                std::string outcome{"idle"};
                 std::string error;
                 std::string source_name;
                 std::shared_ptr<lfs::core::MeshData> pending_mesh;
