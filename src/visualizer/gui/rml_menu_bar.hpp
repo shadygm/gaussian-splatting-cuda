@@ -169,6 +169,7 @@ namespace lfs::vis::gui {
         RmlTooltipController tooltip_;
         float viewport_right_edge_ = 0.0f;
         float applied_toolbar_right_ = -1.0f;
+        bool toolbar_fits_ = true;
         bool ui_hidden_ = false;
         bool last_window_split_view_ = false;
         bool last_ui_hidden_ = false;

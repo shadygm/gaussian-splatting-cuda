@@ -107,6 +107,43 @@ namespace lfs::vis::gui {
             return std::format("{} {}", stripColon(LOC(lichtfeld::Strings::Status::STEP)), step);
         }
 
+        // Width the element's content box would need to show everything on one line.
+        // RmlUi clamps a flex item's base size to the containing block, so a child that is
+        // already too narrow under-reports its own size; recursing past it recovers the real
+        // requirement. Overflow beyond the padding box covers text that outgrew its own box.
+        float neededContentWidth(Rml::Element* element) {
+            assert(element);
+
+            float children_width = 0.0f;
+            for (int i = 0; i < element->GetNumChildren(); ++i) {
+                auto* const child = element->GetChild(i);
+                // A display:none element keeps its last laid-out box, so its width must not be
+                // read back; only the computed display tells us it is gone.
+                if (!child || child->GetDisplay() == Rml::Style::Display::None)
+                    continue;
+
+                const auto position = child->GetComputedValues().position();
+                if (position == Rml::Style::Position::Absolute ||
+                    position == Rml::Style::Position::Fixed)
+                    continue;
+
+                const auto& child_box = child->GetBox();
+                const float outer_width = child_box.GetSize(Rml::BoxArea::Margin).x;
+                const float frame_width = outer_width - child_box.GetSize().x;
+                children_width += std::max(outer_width, neededContentWidth(child) + frame_width);
+            }
+
+            // RmlUi only maintains a scrollable overflow rectangle on elements that clip, and it
+            // is where a descendant whose box was clamped shows up as extra width.
+            const bool clips =
+                element->GetComputedValues().overflow_x() != Rml::Style::Overflow::Visible;
+            const float overflow_width =
+                clips ? std::max(0.0f, element->GetScrollWidth() - element->GetClientWidth()) : 0.0f;
+            const float own_width =
+                children_width > 0.0f ? children_width : element->GetBox().GetSize().x;
+            return own_width + overflow_width;
+        }
+
         struct ProgressMarkerRenderState {
             bool dragging = false;
             bool adding = false;
@@ -441,6 +478,9 @@ namespace lfs::vis::gui {
         model_.progress_markers_rml.clear();
         model_dirty_ = true;
         animation_active_ = true;
+        fit_level_ = 0;
+        last_dp_ratio_ = 0.0f;
+        last_section_signature_ = 0;
         last_render_w_ = 0;
         last_render_h_ = 0;
         last_document_h_ = 0;
@@ -520,6 +560,90 @@ namespace lfs::vis::gui {
         rml_theme::applyTheme(document_, base_rcss_, rml_theme::loadBaseRCSS("rmlui/statusbar.theme.rcss"));
         model_dirty_ = true;
         return true;
+    }
+
+    bool RmlStatusBar::layoutFits(const float reserve_px) const {
+        assert(reserve_px >= 0.0f);
+        if (!document_)
+            return false;
+
+        auto* const body = document_->GetElementById("body");
+        auto* const status_left = document_->GetElementById("status-left");
+        auto* const status_right = document_->GetElementById("status-right");
+        assert(body);
+        assert(status_left);
+        assert(status_right);
+        if (!body || !status_left || !status_right)
+            return false;
+
+        constexpr float tolerance_px = 0.5f;
+        const auto height_fits = [](Rml::Element* element) {
+            return element->GetScrollHeight() <= element->GetClientHeight() + tolerance_px;
+        };
+
+        return height_fits(body) && height_fits(status_left) && height_fits(status_right) &&
+               neededContentWidth(status_left) + reserve_px <=
+                   status_left->GetBox().GetSize().x + tolerance_px &&
+               neededContentWidth(status_right) <=
+                   status_right->GetBox().GetSize().x + tolerance_px;
+    }
+
+    void RmlStatusBar::applyFitLevel(const int level) {
+        assert(level >= 0 && level <= kMaxFitLevel);
+        if (!document_)
+            return;
+
+        auto* const body = document_->GetElementById("body");
+        assert(body);
+        if (!body)
+            return;
+
+        static constexpr const char* fit_classes[kMaxFitLevel] = {
+            "fit-1", "fit-2", "fit-3", "fit-4", "fit-5",
+            "fit-6", "fit-7", "fit-8", "fit-9"};
+        for (int fit_class = 1; fit_class <= kMaxFitLevel; ++fit_class)
+            body->SetClass(fit_classes[fit_class - 1], level >= fit_class);
+    }
+
+    void RmlStatusBar::fitToAvailableWidth(const bool allow_expand) {
+        if (!document_ || !rml_context_ || save_step_interaction_.dragging)
+            return;
+
+        const int entry_level = fit_level_;
+        while (!layoutFits(0.0f) && fit_level_ < kMaxFitLevel) {
+            ++fit_level_;
+            applyFitLevel(fit_level_);
+            rml_context_->Update();
+        }
+
+        if (allow_expand) {
+            const float reserve_px = 8.0f * rml_context_->GetDensityIndependentPixelRatio();
+            while (fit_level_ > 0) {
+                const int previous_level = fit_level_;
+                --fit_level_;
+                applyFitLevel(fit_level_);
+                rml_context_->Update();
+                if (layoutFits(reserve_px))
+                    continue;
+
+                fit_level_ = previous_level;
+                applyFitLevel(fit_level_);
+                rml_context_->Update();
+                break;
+            }
+        }
+
+        if (fit_level_ != entry_level)
+            LOG_DEBUG("Status bar fit level {} -> {} at {} px", entry_level, fit_level_,
+                      rml_context_->GetDimensions().x);
+
+#ifndef NDEBUG
+        for (const char* const id : {"body", "status-left", "status-right"}) {
+            auto* const element = document_->GetElementById(id);
+            assert(element);
+            assert(element->GetScrollHeight() <= element->GetClientHeight() + 0.5f);
+        }
+#endif
     }
 
     void RmlStatusBar::pollGpuMemoryQuery(const std::chrono::steady_clock::time_point now) {
@@ -716,7 +840,7 @@ namespace lfs::vis::gui {
 
         const auto geom = progressBarGeometry();
         if (!geom) {
-            clearSaveStepHover();
+            resetSaveStepInteraction();
             return;
         }
 
@@ -1101,6 +1225,17 @@ namespace lfs::vis::gui {
                        std::format(" {}", LOC(lichtfeld::Strings::Status::FPS)));
         setModelString("git_commit", model_.git_commit, GIT_COMMIT_HASH_SHORT);
 
+        section_signature_ =
+            (model_.show_training ? uint32_t{1} << 0 : 0) |
+            (model_.show_eval_metrics ? uint32_t{1} << 1 : 0) |
+            (model_.show_splats ? uint32_t{1} << 2 : 0) |
+            (model_.show_split ? uint32_t{1} << 3 : 0) |
+            (model_.show_wasd ? uint32_t{1} << 4 : 0) |
+            (model_.show_zoom ? uint32_t{1} << 5 : 0) |
+            (model_.show_status_message ? uint32_t{1} << 6 : 0) |
+            (model_.show_gpu_model ? uint32_t{1} << 7 : 0) |
+            (model_.account_show_tier ? uint32_t{1} << 8 : 0);
+
         animation_active_ = wasd_visible || zoom_visible || status_msg.visible;
         next_refresh_at_ = now + (animation_active_ ? kAnimatedRefreshInterval
                                                     : (ctx.is_training ? kBusyRefreshInterval
@@ -1180,13 +1315,15 @@ namespace lfs::vis::gui {
 
         const int render_w = static_cast<int>(w_px);
         const int render_h = static_cast<int>(h_px);
+        const float dp_ratio = rml_context_->GetDensityIndependentPixelRatio();
+        const bool dp_changed = dp_ratio != last_dp_ratio_;
         const bool theme_current =
             has_theme_signature_ && rml_theme::currentThemeSignature() == last_theme_signature_;
         const auto now = std::chrono::steady_clock::now();
         const bool refresh_due =
             next_refresh_at_ == std::chrono::steady_clock::time_point{} ||
             now >= next_refresh_at_;
-        const bool can_reuse = theme_current && !model_dirty_ && !animation_active_ &&
+        const bool can_reuse = theme_current && !dp_changed && !model_dirty_ && !animation_active_ &&
                                !refresh_due && render_w == last_render_w_ &&
                                render_h == last_render_h_;
         if (!can_reuse) {
@@ -1210,15 +1347,18 @@ namespace lfs::vis::gui {
         const int render_w = static_cast<int>(w_px);
         const int render_h = static_cast<int>(h_px);
         const bool size_changed = (render_w != last_render_w_ || render_h != last_render_h_);
+        const float dp_ratio = rml_context_->GetDensityIndependentPixelRatio();
+        const bool dp_changed = dp_ratio != last_dp_ratio_;
         const bool had_pending_model_dirty = model_dirty_;
         const bool theme_changed = updateTheme();
         const auto now = std::chrono::steady_clock::now();
         const bool refresh_due =
-            size_changed || theme_changed || had_pending_model_dirty || animation_active_ ||
+            size_changed || dp_changed || theme_changed || had_pending_model_dirty || animation_active_ ||
             next_refresh_at_ == std::chrono::steady_clock::time_point{} ||
             now >= next_refresh_at_;
         const bool content_changed = updateContent(ctx, refresh_due);
-        const bool needs_render = size_changed || theme_changed || had_pending_model_dirty ||
+        const bool section_signature_changed = section_signature_ != last_section_signature_;
+        const bool needs_render = size_changed || dp_changed || theme_changed || had_pending_model_dirty ||
                                   content_changed ||
                                   (animation_active_ && refresh_due);
         if (!rml_manager_ || !rml_manager_->getVulkanRenderInterface())
@@ -1231,8 +1371,11 @@ namespace lfs::vis::gui {
                 last_document_h_ = render_h;
             }
             rml_context_->Update();
+            fitToAvailableWidth(size_changed || dp_changed || theme_changed || section_signature_changed);
 
             animation_active_ = animation_active_ || (rml_context_->GetNextUpdateDelay() == 0);
+            last_dp_ratio_ = dp_ratio;
+            last_section_signature_ = section_signature_;
             last_render_w_ = render_w;
             last_render_h_ = render_h;
         }

@@ -266,6 +266,7 @@ set(TEST_FILES
     test_splat_simplify.cpp
     test_rml_text_input_handler.cpp
     test_rml_im_mode_layout.cpp
+    test_status_bar_fit.cpp
     test_rotated_sh_correctness.cpp
     test_tensor_stream.cpp
     test_tensor_d4_from_blob_stream.cpp

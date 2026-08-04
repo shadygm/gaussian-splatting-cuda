@@ -12,6 +12,7 @@
 #include <RmlUi/Core/DataModelHandle.h>
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <future>
 #include <mutex>
 #include <optional>
@@ -29,6 +30,8 @@ namespace lfs::vis {
     struct Theme;
 }
 namespace lfs::vis::gui {
+
+    class RmlStatusBarTestAccess;
 
     // Thread-safe one-line transient status (ErrorBus StatusOnly surface).
     // post() from any thread overwrites and restarts the timer; snapshot() copies
@@ -71,6 +74,8 @@ namespace lfs::vis::gui {
                           float bar_w, float bar_h);
 
     private:
+        friend class RmlStatusBarTestAccess;
+
         struct ProgressBarGeometry {
             float x = 0.0f;
             float y = 0.0f;
@@ -80,6 +85,9 @@ namespace lfs::vis::gui {
 
         bool updateContent(const PanelDrawContext& ctx, bool force_refresh);
         bool updateTheme();
+        bool layoutFits(float reserve_px) const;
+        void fitToAvailableWidth(bool allow_expand);
+        void applyFitLevel(int level);
         void queueCachedVulkanContext(float x, float y, float w_px, float h_px,
                                       int screen_w, int screen_h,
                                       int render_w, int render_h,
@@ -211,10 +219,15 @@ namespace lfs::vis::gui {
         bool reactive_fps_available_ = false;
         float reactive_fps_value_ = 0.0f;
         std::vector<lfs::core::reactive::SubscriptionToken> subscriptions_;
+        int fit_level_ = 0;
+        float last_dp_ratio_ = 0.0f;
+        uint32_t section_signature_ = 0;
+        uint32_t last_section_signature_ = 0;
         int last_render_w_ = 0;
         int last_render_h_ = 0;
         int last_document_h_ = 0;
         CachedVulkanContextRender direct_cache_;
+        static constexpr int kMaxFitLevel = 9;
         static constexpr auto kIdleRefreshInterval = std::chrono::milliseconds(200);
         static constexpr auto kBusyRefreshInterval = std::chrono::milliseconds(100);
         static constexpr auto kAnimatedRefreshInterval = std::chrono::milliseconds(16);

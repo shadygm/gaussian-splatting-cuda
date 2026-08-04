@@ -388,6 +388,7 @@ namespace lfs::vis::gui {
         menu_window_maximize_ = document_->GetElementById("menu-window-maximize");
         body_el_ = document_->GetElementById("body");
         applied_toolbar_right_ = -1.0f;
+        toolbar_fits_ = true;
         last_window_split_view_ = false;
         last_ui_hidden_ = false;
         last_window_maximized_ = false;
@@ -1048,15 +1049,38 @@ namespace lfs::vis::gui {
         if (menu_toolbar_) {
             const float inset = 8.0f * dp_ratio;
             constexpr float kFallbackRightClusterReserveDp = 184.0f;
-            float right_px = kFallbackRightClusterReserveDp * dp_ratio;
+            float min_right_px = kFallbackRightClusterReserveDp * dp_ratio;
             if (menu_window_controls_) {
                 const auto offset = menu_window_controls_->GetAbsoluteOffset(Rml::BoxArea::Border);
                 if (offset.x > 0.0f)
-                    right_px = static_cast<float>(screen_w) - offset.x + 4.0f * dp_ratio;
+                    min_right_px = static_cast<float>(screen_w) - offset.x + 4.0f * dp_ratio;
             }
+            float right_px = min_right_px;
             if (viewport_right_edge_ > 0.0f)
                 right_px = std::max(right_px, static_cast<float>(screen_w) - viewport_right_edge_ + inset);
-            if (std::abs(right_px - applied_toolbar_right_) > 0.5f) {
+
+            // The toolbar is out of flow, so viewport alignment alone would let it slide over the
+            // menu labels. Cap how far left it may travel, and drop it once even the cap collides.
+            const float menus_right_px =
+                menu_items_ ? menu_items_->GetAbsoluteOffset(Rml::BoxArea::Border).x +
+                                  menu_items_->GetOffsetWidth()
+                            : 0.0f;
+            const float clear_of_menus_px = static_cast<float>(screen_w) -
+                                            menu_toolbar_->GetOffsetWidth() - menus_right_px -
+                                            12.0f * dp_ratio;
+            // Asymmetric threshold so a window parked on the boundary cannot flicker.
+            const float show_slack_px = toolbar_fits_ ? 0.0f : 8.0f * dp_ratio;
+            const bool toolbar_fits = clear_of_menus_px >= min_right_px + show_slack_px;
+            if (toolbar_fits)
+                right_px = std::min(right_px, clear_of_menus_px);
+
+            if (toolbar_fits != toolbar_fits_) {
+                menu_toolbar_->SetClass("hidden", !toolbar_fits);
+                toolbar_fits_ = toolbar_fits;
+                render_needed_ = true;
+                LOG_DEBUG("Menu toolbar {} at {} px", toolbar_fits ? "shown" : "hidden", screen_w);
+            }
+            if (toolbar_fits && std::abs(right_px - applied_toolbar_right_) > 0.5f) {
                 menu_toolbar_->SetProperty("right", std::format("{:.1f}px", right_px));
                 applied_toolbar_right_ = right_px;
                 render_needed_ = true;
