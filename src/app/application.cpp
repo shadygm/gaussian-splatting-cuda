@@ -43,6 +43,7 @@
 #include <cuda_runtime.h>
 #include <future>
 #include <mutex>
+#include <print>
 #include <rasterization_api.h>
 #include <string_view>
 
@@ -512,7 +513,14 @@ namespace lfs::app {
         // LocalizationManager has no catalog loaded yet. Do not convert to LOC(...).
         void reportFatalStartupError(const std::string& title, const std::string& message,
                                      const bool show_dialog) {
-            LOG_ERROR("{}", message);
+            // Only the training argument path reaches Logger::init, so for convert, mesh2splat,
+            // preprocess and --warmup a LOG_ERROR would be dropped and the refusal would look
+            // like a silent exit. Same fallback contract as error_reporter.cpp.
+            if (core::Logger::get().is_ready()) {
+                LOG_ERROR("{}", message);
+            } else {
+                std::println(stderr, "{}", message);
+            }
 #ifdef WIN32
             if (show_dialog) {
                 MessageBoxW(nullptr, core::utf8_to_wstring(message).c_str(),
@@ -524,54 +532,57 @@ namespace lfs::app {
 #endif
         }
 
-        // The binary only carries code for SM >= LFS_MIN_SM, so a lower card can never JIT our
-        // kernels. Without this gate the first launch inside warmup_kernels dies with no
-        // user-facing message (#1540). show_dialog is false for CLI-only modes: a modal in a
-        // non-interactive process blocks it forever.
-        bool preflightGpu(const bool show_dialog) {
-            const auto info = lfs::core::check_cuda_version();
-            if (info.query_failed) {
-                LOG_WARN("Failed to query CUDA driver version");
-            } else {
-                LOG_INFO("CUDA driver version: {}.{}", info.major, info.minor);
-                if (!info.supported) {
-                    reportFatalStartupError(
-                        "LichtFeld Studio - Incompatible driver",
-                        std::format("CUDA {}.{} is too old. LichtFeld Studio requires CUDA 12.8 or "
-                                    "newer, which needs NVIDIA driver 570 or newer.",
-                                    info.major, info.minor),
-                        show_dialog);
-                    return false;
-                }
-            }
+    } // namespace
 
-            cudaDeviceProp prop{};
-            if (const cudaError_t err = cudaGetDeviceProperties(&prop, 0); err != cudaSuccess) {
+    // The binary only carries code for SM >= LFS_MIN_SM, so a lower card can never JIT our
+    // kernels. Without this gate the first launch inside warmup_kernels dies with no
+    // user-facing message (#1540). show_dialog is false for CLI-only modes: a modal in a
+    // non-interactive process blocks it forever.
+    bool preflightGpu(const bool show_dialog) {
+        const auto info = lfs::core::check_cuda_version();
+        if (info.query_failed) {
+            LOG_WARN("Failed to query CUDA driver version");
+        } else {
+            LOG_INFO("CUDA driver version: {}.{}", info.major, info.minor);
+            if (!info.supported) {
                 reportFatalStartupError(
-                    "LichtFeld Studio - No usable GPU",
-                    std::format("No usable NVIDIA GPU found ({}). LichtFeld Studio requires an "
-                                "NVIDIA GPU with compute capability {}.{} or newer.{}",
-                                cudaGetErrorString(err), LFS_MIN_SM / 10, LFS_MIN_SM % 10,
-                                kMinGpuHint),
+                    "LichtFeld Studio - Incompatible driver",
+                    std::format("CUDA {}.{} is too old. LichtFeld Studio requires CUDA 12.8 or "
+                                "newer, which needs NVIDIA driver 570 or newer.",
+                                info.major, info.minor),
                     show_dialog);
                 return false;
             }
-
-            LOG_INFO("GPU: {} (SM {}.{}, {} MB)", prop.name, prop.major, prop.minor,
-                     prop.totalGlobalMem / (1024 * 1024));
-
-            if (const int device_sm = prop.major * 10 + prop.minor; device_sm < LFS_MIN_SM) {
-                reportFatalStartupError(
-                    "LichtFeld Studio - Incompatible GPU",
-                    std::format("This PC's GPU ({}) has compute capability {}.{}, below the {}.{} "
-                                "this build requires.{}",
-                                prop.name, prop.major, prop.minor, LFS_MIN_SM / 10, LFS_MIN_SM % 10,
-                                kMinGpuHint),
-                    show_dialog);
-                return false;
-            }
-            return true;
         }
+
+        cudaDeviceProp prop{};
+        if (const cudaError_t err = cudaGetDeviceProperties(&prop, 0); err != cudaSuccess) {
+            reportFatalStartupError(
+                "LichtFeld Studio - No usable GPU",
+                std::format("No usable NVIDIA GPU found ({}). LichtFeld Studio requires an "
+                            "NVIDIA GPU with compute capability {}.{} or newer.{}",
+                            cudaGetErrorString(err), LFS_MIN_SM / 10, LFS_MIN_SM % 10, kMinGpuHint),
+                show_dialog);
+            return false;
+        }
+
+        LOG_INFO("GPU: {} (SM {}.{}, {} MB)", prop.name, prop.major, prop.minor,
+                 prop.totalGlobalMem / (1024 * 1024));
+
+        if (const int device_sm = prop.major * 10 + prop.minor; device_sm < LFS_MIN_SM) {
+            reportFatalStartupError(
+                "LichtFeld Studio - Incompatible GPU",
+                std::format("This PC's GPU ({}) has compute capability {}.{}, below the {}.{} "
+                            "this build requires.{}",
+                            prop.name, prop.major, prop.minor, LFS_MIN_SM / 10, LFS_MIN_SM % 10,
+                            kMinGpuHint),
+                show_dialog);
+            return false;
+        }
+        return true;
+    }
+
+    namespace {
 
         std::future<void>& cudaWarmupFuture() {
             static std::future<void> fut;
@@ -601,7 +612,7 @@ namespace lfs::app {
             // Warm up on every path, not just import/resume: warmup_kernels forces the
             // lazily-loaded cubins to upload so captureCudaWarmupDelta can attribute that
             // module memory (the cuda.modules row). Without it the modules land in the
-            // unattributed NVML residual. The pre-flight gate in Application::run covers
+            // unattributed NVML residual. The pre-flight gate in run_mode covers
             // hardware compatibility before this warmup starts.
             warmupCudaAsync();
 
@@ -696,15 +707,6 @@ namespace lfs::app {
     } // namespace
 
     int Application::run(std::unique_ptr<lfs::core::param::TrainingParameters> params) {
-        // Refuse unsupported hardware before anything touches the GPU. --render-path is a
-        // CLI-only mode that does not set optimization.headless, so test it explicitly: a
-        // modal must never appear in a non-interactive run.
-        const bool interactive = !params->optimization.headless && !params->render_path;
-        if (!preflightGpu(interactive)) {
-            core::teardown_gpu_before_exit();
-            core::flush_and_exit(1);
-        }
-
         // Pre-initialize CacheLoader for the exe module.
         // On Windows, lfs_io (static lib) is linked into both the exe and
         // lfs_visualizer.dll, giving each its own CacheLoader singleton.
