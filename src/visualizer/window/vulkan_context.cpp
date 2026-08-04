@@ -700,13 +700,33 @@ namespace lfs::vis {
         const bool requires_recreate,
         const std::optional<bool> allow_headroom) {
         const auto now = std::chrono::steady_clock::now();
-        framebuffer_resize_deferred_ = true;
-        framebuffer_resize_requires_recreate_ = framebuffer_resize_requires_recreate_ || requires_recreate;
         if (allow_headroom.has_value()) {
             framebuffer_resize_allow_headroom_ = *allow_headroom;
         }
         framebuffer_resize_last_change_ = now;
-        framebuffer_resized_ = false;
+        last_error_.clear();
+        // A rebuild already forced by an out-of-date swapchain or a failed recreate keeps
+        // its immediacy: debouncing it would park an unpresentable swapchain until the
+        // drag goes quiet.
+        if (framebuffer_resized_) {
+            return;
+        }
+        framebuffer_resize_deferred_ = true;
+        framebuffer_resize_requires_recreate_ = framebuffer_resize_requires_recreate_ || requires_recreate;
+    }
+
+    void VulkanContext::requireSwapchainRecreateAfterOutOfDate() {
+        // An out-of-date swapchain cannot produce another frame, so there is nothing
+        // to coalesce: recreate on the next beginFrame. Routing this through
+        // deferSwapchainResizeRecreate would re-stamp framebuffer_resize_last_change_
+        // on every retry, and a shrink (grow_delta <= 0) waits on that quiet delay --
+        // the retry keeps resetting the gate it is waiting for, so acquire spins
+        // forever and no frame is ever presented again.
+        framebuffer_resize_exact_after_interactive_ = false;
+        framebuffer_resize_allow_headroom_ = false;
+        framebuffer_resize_deferred_ = false;
+        framebuffer_resize_requires_recreate_ = false;
+        framebuffer_resized_ = true;
         last_error_.clear();
     }
 
@@ -1061,8 +1081,7 @@ namespace lfs::vis {
                               framebuffer_height_,
                               swapchain_extent_.width,
                               swapchain_extent_.height);
-                    framebuffer_resize_exact_after_interactive_ = false;
-                    deferSwapchainResizeRecreate(true, false);
+                    requireSwapchainRecreateAfterOutOfDate();
                     return false;
                 }
                 // Stop/shutdown on acquire: soft skip-frame, no recreate.
@@ -1509,8 +1528,7 @@ namespace lfs::vis {
                       swapchain_extent_.width,
                       swapchain_extent_.height);
             frame_suboptimal_ = false;
-            framebuffer_resize_exact_after_interactive_ = false;
-            deferSwapchainResizeRecreate(true, false);
+            requireSwapchainRecreateAfterOutOfDate();
             return true;
         }
         frame_suboptimal_ = false;
@@ -3759,11 +3777,17 @@ namespace lfs::vis {
         const VkPresentModeKHR present_mode = choosePresentMode(support.present_modes);
         const bool extent_fixed_to_surface =
             support.capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max();
-        const auto present_scaling_capabilities = queryPresentScalingCapabilities(present_mode);
-        const bool use_present_scaling =
-            old_swapchain != VK_NULL_HANDLE && present_scaling_capabilities.has_value();
         const bool add_resize_headroom =
             old_swapchain != VK_NULL_HANDLE && framebuffer_resize_allow_headroom_;
+        // Present scaling only has work to do when the swapchain is deliberately sized
+        // away from the surface, which is the headroom path. Requesting it for an
+        // exact-extent swapchain gains nothing and makes NVIDIA run a scaled-image setup
+        // that fails ("Failed to initialize scaled swapchain images") on every recreate.
+        std::optional<VkSurfacePresentScalingCapabilitiesEXT> present_scaling_capabilities;
+        if (add_resize_headroom) {
+            present_scaling_capabilities = queryPresentScalingCapabilities(present_mode);
+        }
+        const bool use_present_scaling = present_scaling_capabilities.has_value();
         const VkExtent2D extent = chooseSwapchainExtent(support.capabilities,
                                                         framebuffer_width,
                                                         framebuffer_height,

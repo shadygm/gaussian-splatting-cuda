@@ -57,7 +57,11 @@ namespace lfs::vis {
         void shutdown();
         void notifyFramebufferResized(int width, int height, ResizeIntent intent = ResizeIntent::Exact);
         [[nodiscard]] bool hasPendingSwapchainResize() const {
-            return framebuffer_resize_deferred_ || framebuffer_resize_exact_after_interactive_;
+            // A forced rebuild is pending work too, otherwise render-on-demand can idle for
+            // half a second holding an out-of-date swapchain. Zero framebuffers are excluded:
+            // beginFrame skips those without rebuilding, so they would never clear the flag.
+            return framebuffer_resize_deferred_ || framebuffer_resize_exact_after_interactive_ ||
+                   (framebuffer_resized_ && framebuffer_width_ > 0 && framebuffer_height_ > 0);
         }
         [[nodiscard]] bool pendingSwapchainResizeReady() const;
         [[nodiscard]] double secondsUntilPendingSwapchainResizeReady() const;
@@ -358,6 +362,7 @@ namespace lfs::vis {
         bool finishActiveRendering(VkCommandBuffer command_buffer);
         void deferSwapchainResizeRecreate(bool requires_recreate = true,
                                           std::optional<bool> allow_headroom = std::nullopt);
+        void requireSwapchainRecreateAfterOutOfDate();
         [[nodiscard]] bool promoteDeferredSwapchainResizeIfSettled();
         [[nodiscard]] bool framebufferFitsSwapchainExtent() const;
         [[nodiscard]] bool framebufferResizeRequiresSwapchainRecreate() const;
