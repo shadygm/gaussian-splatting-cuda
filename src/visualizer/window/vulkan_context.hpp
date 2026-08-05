@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <expected>
 #include <format>
+#include <mutex>
 #include <optional>
 #include <source_location>
 #include <string>
@@ -452,6 +453,7 @@ namespace lfs::vis {
         [[nodiscard]] bool drainCompletedImmediateSubmits();
         std::vector<FrameTimelineWait> frame_timeline_waits_;
         bool frame_timeline_waits_valid_ = true;
+        std::mutex timeline_value_tracker_mutex_;
         std::unordered_map<VkSemaphore, std::uint64_t> last_frame_timeline_wait_values_;
         std::unordered_map<VkSemaphore, std::uint64_t> last_immediate_timeline_wait_values_;
         std::unordered_map<VkSemaphore, std::uint64_t> last_immediate_timeline_signal_values_;

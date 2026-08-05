@@ -1776,7 +1776,9 @@ namespace lfs::vis {
                         vulkan_frame.image,
                         vulkan_frame.size,
                         vulkan_frame.flip_y,
-                        vulkan_frame.image_generation,
+                        vulkan_frame.split_left_image_generation != 0
+                            ? vulkan_frame.split_left_image_generation
+                            : vulkan_frame.image_generation,
                         vulkan_frame.completion_semaphore,
                         vulkan_frame.completion_value);
                 }

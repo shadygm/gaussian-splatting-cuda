@@ -663,9 +663,12 @@ namespace lfs::vis {
         frame_rendering_active_ = false;
         frame_timeline_waits_.clear();
         frame_timeline_waits_valid_ = true;
-        last_frame_timeline_wait_values_.clear();
-        last_immediate_timeline_wait_values_.clear();
-        last_immediate_timeline_signal_values_.clear();
+        {
+            const std::lock_guard lock(timeline_value_tracker_mutex_);
+            last_frame_timeline_wait_values_.clear();
+            last_immediate_timeline_wait_values_.clear();
+            last_immediate_timeline_signal_values_.clear();
+        }
     }
 
     VkExtent2D VulkanContext::framebufferExtent() const {
@@ -1826,6 +1829,7 @@ namespace lfs::vis {
                 frame_timeline_waits_.size()));
             return;
         }
+        const std::lock_guard lock(timeline_value_tracker_mutex_);
         const std::uint64_t previous = last_frame_timeline_wait_values_[semaphore];
         if (value <= previous) {
             frame_timeline_waits_valid_ = false;
@@ -3404,6 +3408,12 @@ namespace lfs::vis {
             out = {};
             return fail(std::format("vkCreateSemaphore(external timeline) failed: {}", vkResultToString(result)));
         }
+        {
+            const std::lock_guard lock(timeline_value_tracker_mutex_);
+            last_frame_timeline_wait_values_.erase(out.semaphore);
+            last_immediate_timeline_wait_values_.erase(out.semaphore);
+            last_immediate_timeline_signal_values_.erase(out.semaphore);
+        }
         setDebugObjectNamef(VK_OBJECT_TYPE_SEMAPHORE,
                             out.semaphore,
                             "interop.timeline.external[{}]",
@@ -3446,8 +3456,14 @@ namespace lfs::vis {
     }
 
     void VulkanContext::destroyExternalSemaphore(ExternalSemaphore& semaphore) {
-        if (device_ && semaphore.semaphore != VK_NULL_HANDLE) {
-            vkDestroySemaphore(device_, semaphore.semaphore, nullptr);
+        if (semaphore.semaphore != VK_NULL_HANDLE) {
+            const std::lock_guard lock(timeline_value_tracker_mutex_);
+            last_frame_timeline_wait_values_.erase(semaphore.semaphore);
+            last_immediate_timeline_wait_values_.erase(semaphore.semaphore);
+            last_immediate_timeline_signal_values_.erase(semaphore.semaphore);
+            if (device_) {
+                vkDestroySemaphore(device_, semaphore.semaphore, nullptr);
+            }
         }
         closeExternalNativeHandle(semaphore.native_handle);
         semaphore = {};
@@ -3557,33 +3573,36 @@ namespace lfs::vis {
             last_error_.clear();
             return true;
         }
-        const std::uint64_t previous_wait_value =
-            options.wait ? last_immediate_timeline_wait_values_[options.wait->semaphore] : 0;
-        const std::uint64_t previous_signal_value =
-            options.signal ? last_immediate_timeline_signal_values_[options.signal->semaphore] : 0;
-        if (options.wait && options.wait->value <= previous_wait_value) {
-            return fail(std::format(
-                "Immediate-submit timeline waits must increase strictly (semaphore={:#x}, requested_value={}, previous_value={}, image={:#x}, old_layout={}({}), new_layout={}({}))",
-                vkHandleValue(options.wait->semaphore),
-                options.wait->value,
-                previous_wait_value,
-                vkHandleValue(image),
-                vkImageLayoutToString(old_layout),
-                static_cast<int>(old_layout),
-                vkImageLayoutToString(new_layout),
-                static_cast<int>(new_layout)));
-        }
-        if (options.signal && options.signal->value <= previous_signal_value) {
-            return fail(std::format(
-                "Immediate-submit timeline signals must increase strictly (semaphore={:#x}, requested_value={}, previous_value={}, image={:#x}, old_layout={}({}), new_layout={}({}))",
-                vkHandleValue(options.signal->semaphore),
-                options.signal->value,
-                previous_signal_value,
-                vkHandleValue(image),
-                vkImageLayoutToString(old_layout),
-                static_cast<int>(old_layout),
-                vkImageLayoutToString(new_layout),
-                static_cast<int>(new_layout)));
+        {
+            const std::lock_guard timeline_value_lock(timeline_value_tracker_mutex_);
+            const std::uint64_t previous_wait_value =
+                options.wait ? last_immediate_timeline_wait_values_[options.wait->semaphore] : 0;
+            const std::uint64_t previous_signal_value =
+                options.signal ? last_immediate_timeline_signal_values_[options.signal->semaphore] : 0;
+            if (options.wait && options.wait->value <= previous_wait_value) {
+                return fail(std::format(
+                    "Immediate-submit timeline waits must increase strictly (semaphore={:#x}, requested_value={}, previous_value={}, image={:#x}, old_layout={}({}), new_layout={}({}))",
+                    vkHandleValue(options.wait->semaphore),
+                    options.wait->value,
+                    previous_wait_value,
+                    vkHandleValue(image),
+                    vkImageLayoutToString(old_layout),
+                    static_cast<int>(old_layout),
+                    vkImageLayoutToString(new_layout),
+                    static_cast<int>(new_layout)));
+            }
+            if (options.signal && options.signal->value <= previous_signal_value) {
+                return fail(std::format(
+                    "Immediate-submit timeline signals must increase strictly (semaphore={:#x}, requested_value={}, previous_value={}, image={:#x}, old_layout={}({}), new_layout={}({}))",
+                    vkHandleValue(options.signal->semaphore),
+                    options.signal->value,
+                    previous_signal_value,
+                    vkHandleValue(image),
+                    vkImageLayoutToString(old_layout),
+                    static_cast<int>(old_layout),
+                    vkImageLayoutToString(new_layout),
+                    static_cast<int>(new_layout)));
+            }
         }
 
         // Imported CUDA timeline operations are opaque to Vulkan validation.
@@ -3727,11 +3746,14 @@ namespace lfs::vis {
             vkFreeCommandBuffers(device_, immediate_command_pool_, 1, &command_buffer);
             return fail(std::format("Immediate Vulkan image layout transition submit failed: {}", vkResultToString(result)));
         }
-        if (options.wait) {
-            last_immediate_timeline_wait_values_[options.wait->semaphore] = options.wait->value;
-        }
-        if (options.signal) {
-            last_immediate_timeline_signal_values_[options.signal->semaphore] = options.signal->value;
+        {
+            const std::lock_guard timeline_value_lock(timeline_value_tracker_mutex_);
+            if (options.wait) {
+                last_immediate_timeline_wait_values_[options.wait->semaphore] = options.wait->value;
+            }
+            if (options.signal) {
+                last_immediate_timeline_signal_values_[options.signal->semaphore] = options.signal->value;
+            }
         }
         // Fire-and-forget: queue cmd+fence for lazy reaping. Vulkan queues are
         // FIFO per VkQueue, so subsequent submits on graphics_queue_ correctly
