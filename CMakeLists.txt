@@ -238,6 +238,8 @@ endif()
 # Compiler caching is part of the default developer loop. Disable it for clean
 # compiler benchmarks or when diagnosing a launcher-specific problem.
 option(ENABLE_COMPILER_CACHE "Auto-detect and use sccache/ccache compiler launchers" ON)
+set(LFS_CUDA_COMPILER_CACHE "" CACHE STRING
+    "Compiler cache for CUDA only: empty follows the auto-detected launcher, OFF disables CUDA caching, or name/path of a launcher such as ccache")
 if(ENABLE_COMPILER_CACHE)
     if(NOT WIN32 AND
        NOT MSVC AND
@@ -311,7 +313,27 @@ if(ENABLE_COMPILER_CACHE)
             # Keep the existing CUDA launcher unchanged. sccache decomposes
             # nvcc compilations after canonicalizing their input path, so the
             # C/C++ source alias does not provide cross-worktree CUDA hits.
-            set(CMAKE_CUDA_COMPILER_LAUNCHER "${_lfs_compiler_cache_program}")
+            #
+            # LFS_CUDA_COMPILER_CACHE retargets the CUDA launcher without
+            # touching the C/C++ one. Some nvcc versions cannot be wrapped by
+            # sccache: with CUDA 13.3 a single invocation emitting both PTX and
+            # SASS fails as "fatbinary fatal: Could not open input file
+            # <name>.ptx", because sccache relocates the intermediate. Earlier
+            # toolkits are unaffected, so the default is deliberately unchanged.
+            if(LFS_CUDA_COMPILER_CACHE STREQUAL "")
+                set(CMAKE_CUDA_COMPILER_LAUNCHER "${_lfs_compiler_cache_program}")
+            elseif(LFS_CUDA_COMPILER_CACHE MATCHES "^(OFF|NO|FALSE|0)$")
+                unset(CMAKE_CUDA_COMPILER_LAUNCHER)
+                message(STATUS "Compiler cache: CUDA uncached (LFS_CUDA_COMPILER_CACHE=${LFS_CUDA_COMPILER_CACHE})")
+            else()
+                find_program(LFS_CUDA_COMPILER_CACHE_PROGRAM NAMES "${LFS_CUDA_COMPILER_CACHE}")
+                if(NOT LFS_CUDA_COMPILER_CACHE_PROGRAM)
+                    message(FATAL_ERROR
+                        "LFS_CUDA_COMPILER_CACHE=${LFS_CUDA_COMPILER_CACHE} was not found")
+                endif()
+                set(CMAKE_CUDA_COMPILER_LAUNCHER "${LFS_CUDA_COMPILER_CACHE_PROGRAM}")
+                message(STATUS "Compiler cache: CUDA via ${LFS_CUDA_COMPILER_CACHE_PROGRAM}")
+            endif()
             message(STATUS "Compiler cache: ${_lfs_compiler_cache_name}")
             if(_lfs_compiler_cache_paths_normalized)
                 message(STATUS "Compiler cache: C/C++ checkout-local paths normalized")

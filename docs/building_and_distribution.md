@@ -188,6 +188,7 @@ dist/
 | `BUILD_TESTS` | OFF | Build test suite |
 | `BUILD_LOCALIZATION_TESTS` | OFF | Register headless localization contract tests |
 | `LFS_ENFORCE_LINUX_GUI_BACKENDS` | ON | Linux only. Fail configure if SDL3 would be built without both X11 and Wayland |
+| `LFS_CUDA_COMPILER_CACHE` | *(empty)* | Compiler cache for CUDA only. Empty follows the auto-detected launcher; `OFF` disables CUDA caching; or name/path of a launcher such as `ccache`. Needed where nvcc cannot be wrapped by sccache |
 
 ONNX Runtime is consumed as a pinned prebuilt GPU SDK on x64 Windows and Linux
 instead of being built by vcpkg. The default SDK is controlled by
