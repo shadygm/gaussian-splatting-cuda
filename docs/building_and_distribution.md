@@ -96,6 +96,30 @@ cmake --install build --prefix ./dist
 
 ## Tests
 
+The tensor comparison tests validate the built-in tensor library against LibTorch as an
+oracle, so a LibTorch SDK is required to configure the test build. It is not needed for the
+application itself, which is LibTorch-free.
+
+Download the LibTorch C++ SDK matching your CUDA version from
+[pytorch.org](https://pytorch.org/get-started/locally/) (select **LibTorch** as the package
+and **C++/Java** as the language) and unpack it so `TorchConfig.cmake` resolves:
+
+| Platform | Expected location |
+|---|---|
+| Linux | `external/libtorch/` |
+| Windows (Release) | `external/release/libtorch/` |
+| Windows (Debug) | `external/debug/libtorch/` |
+
+```bash
+# Linux, from the repository root
+curl -L -o libtorch.zip "<libtorch-download-url>"
+unzip -q libtorch.zip -d external/
+```
+
+Configuring without it fails at `find_package(Torch REQUIRED)`. Some LibTorch builds link
+CUDA libraries they do not ship; if the test binaries then fail to start with a missing
+shared library, install the named library or use a build that bundles its CUDA dependencies.
+
 Tests are a separate opt-in build:
 
 ```bash
