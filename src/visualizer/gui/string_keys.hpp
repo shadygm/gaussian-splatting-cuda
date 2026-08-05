@@ -44,7 +44,7 @@ namespace lichtfeld::Strings {
             inline constexpr const char* MENU = "menu.help";
             inline constexpr const char* ABOUT = "menu.help.about";
         } // namespace Help
-    }     // namespace Menu
+    } // namespace Menu
 
     namespace Window {
         inline constexpr const char* ABOUT = "window.about";
@@ -73,7 +73,7 @@ namespace lichtfeld::Strings {
             inline constexpr const char* BUILD_TYPE = "about.build_info.build_type";
             inline constexpr const char* PLATFORM = "about.build_info.platform";
         } // namespace BuildInfo
-    }     // namespace About
+    } // namespace About
 
     namespace Training {
         namespace Section {
@@ -246,7 +246,7 @@ namespace lichtfeld::Strings {
             inline constexpr const char* ADD = "training.button.add";
             inline constexpr const char* REMOVE = "training.button.remove";
         } // namespace Button
-    }     // namespace Training
+    } // namespace Training
 
     namespace Scene {
         inline constexpr const char* ADD_PLY = "scene.add_ply";
