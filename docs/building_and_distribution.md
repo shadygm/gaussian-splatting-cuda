@@ -54,8 +54,12 @@ sudo apt install \
   git curl unzip cmake gcc-14 g++-14 ccache ninja-build zip tar pkg-config python3 python3-dev \
   libxinerama-dev libxcursor-dev xorg-dev libglu1-mesa-dev \
   libwayland-dev libxkbcommon-dev libegl-dev libdecor-0-dev libibus-1.0-dev libdbus-1-dev \
-  libsystemd-dev nasm autoconf autoconf-archive automake libtool
+  libsystemd-dev libgtk-3-dev nasm autoconf autoconf-archive automake libtool
 ```
+
+`libgtk-3-dev` is required because `nativefiledialog-extended` is built from source on Linux
+against its GTK backend rather than taken from vcpkg; see `cmake/SetupNativeFileDialog.cmake`.
+Without it configure fails with `pkg-config could not locate `gtk+-3.0``.
 
 The configure step now fails early if neither a usable X11 stack nor a usable Wayland stack is present.
 If you intentionally want a headless or experimental build, pass `-DLFS_ENFORCE_LINUX_GUI_BACKENDS=OFF`.
