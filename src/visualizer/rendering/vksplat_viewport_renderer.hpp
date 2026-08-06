@@ -227,8 +227,6 @@ namespace lfs::vis {
         void reset();
         [[nodiscard]] std::optional<LodPageCache::Snapshot> ensureLodPageCacheSnapshot(
             const lfs::core::SplatData& splat_data);
-        [[nodiscard]] std::optional<LodPageCache::Snapshot> lodPageCacheSnapshot(
-            const lfs::core::SplatData& splat_data) const;
         // VRAM page-pool budget in splats for RAD-backed LoD streaming; 0 = full residency.
         void setLodPagePoolBudget(std::size_t splats) {
             lod_pool_sizing_dirty_ = lod_pool_sizing_dirty_ || lod_page_pool_splats_ != splats;
@@ -573,7 +571,11 @@ namespace lfs::vis {
             glm::ivec2 size{0, 0};
             VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
             VkImageLayout depth_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+            // Content identity for consumers (compose may overwrite). Not a tracker key.
             std::uint64_t generation = 0;
+            // Resource identity for VulkanImageBarrierTracker (#1478). Bumped only in
+            // ensureOutputImages when the VkImages are recreated.
+            std::uint64_t image_generation = 0;
             // Timeline value signalled by the compute submission that produced
             // this exact ring image. Graphics-queue readbacks wait this value;
             // a host wait alone is not a Vulkan cross-queue memory dependency.

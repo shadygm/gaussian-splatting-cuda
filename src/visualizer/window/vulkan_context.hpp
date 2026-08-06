@@ -6,6 +6,7 @@
 
 #include "core/error.hpp"
 #include "core/export.hpp"
+#include "gpu_object_census.hpp"
 #include "renderer_terminal_state.hpp"
 #include "rendering/vulkan_result.hpp"
 #include "rendering/vulkan_wait.hpp"
@@ -112,6 +113,8 @@ namespace lfs::vis {
             std::string diagnostic_scope;
             std::string diagnostic_label;
             ExternalNativeHandle native_handle = kInvalidExternalNativeHandle;
+            // #1488: true only after census onCreate; fail-path destroy must not onDestroy.
+            bool census_counted = false;
         };
 
         struct ExternalBuffer {
@@ -122,12 +125,15 @@ namespace lfs::vis {
             std::string diagnostic_scope;
             std::string diagnostic_label;
             ExternalNativeHandle native_handle = kInvalidExternalNativeHandle;
+            bool census_counted = false;
         };
 
         struct ExternalSemaphore {
             VkSemaphore semaphore = VK_NULL_HANDLE;
             std::uint64_t initial_value = 0;
+            std::string diagnostic_scope;
             ExternalNativeHandle native_handle = kInvalidExternalNativeHandle;
+            bool census_counted = false;
         };
 
         struct TimelinePoint {
@@ -291,7 +297,10 @@ namespace lfs::vis {
                                                 ExternalBuffer& out,
                                                 std::string_view diagnostic_scope = "vulkan.external.imported_buffer",
                                                 std::string_view diagnostic_label = {});
-        [[nodiscard]] bool createExternalTimelineSemaphore(std::uint64_t initial_value, ExternalSemaphore& out);
+        [[nodiscard]] bool createExternalTimelineSemaphore(
+            std::uint64_t initial_value,
+            ExternalSemaphore& out,
+            std::string_view diagnostic_scope = "vulkan.external.semaphore");
         void destroyExternalSemaphore(ExternalSemaphore& semaphore);
         [[nodiscard]] ExternalNativeHandle releaseExternalSemaphoreNativeHandle(ExternalSemaphore& semaphore) const;
         [[nodiscard]] static bool externalNativeHandleValid(ExternalNativeHandle handle);
@@ -429,7 +438,11 @@ namespace lfs::vis {
         std::vector<VkImage> swapchain_images_;
         std::vector<VkImageView> swapchain_image_views_;
         std::size_t swapchain_estimated_bytes_ = 0;
+        // Bumped once per createSwapchain; keys swapchain + depth registrations and
+        // their transitions against VulkanImageBarrierTracker (epic #1496 / #1478).
+        std::uint64_t swapchain_epoch_ = 0;
         VulkanImageBarrierTracker image_barriers_;
+        GpuObjectCensus gpu_object_census_;
         VkFormat depth_stencil_format_ = VK_FORMAT_UNDEFINED;
         std::vector<DepthStencilResource> depth_stencil_resources_;
 

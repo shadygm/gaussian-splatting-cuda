@@ -77,7 +77,6 @@ namespace lfs::vis {
                 .failure_log_prefix = "Required Vulkan/CUDA viewport interop failed",
                 .external_handle_early_out = true,
                 .publishes_published = false,
-                .has_flip_y = true,
                 .log_timer_perf = true,
             };
         case ChannelId::SplitRight:
@@ -89,7 +88,6 @@ namespace lfs::vis {
                 .failure_log_prefix = "Required Vulkan/CUDA split-view interop failed",
                 .external_handle_early_out = false,
                 .publishes_published = true,
-                .has_flip_y = true,
                 .log_timer_perf = false,
             };
         case ChannelId::DepthBlit:
@@ -101,7 +99,6 @@ namespace lfs::vis {
                 .failure_log_prefix = "Required Vulkan/CUDA depth-blit interop failed",
                 .external_handle_early_out = false,
                 .publishes_published = true,
-                .has_flip_y = false,
                 .log_timer_perf = false,
             };
         }
@@ -419,7 +416,7 @@ namespace lfs::vis {
                                              std::format("{}.frame{}",
                                                          channel.policy.debug_name_prefix,
                                                          frame_slot)) ||
-                !context.createExternalTimelineSemaphore(0, target->semaphore)) {
+                !context.createExternalTimelineSemaphore(0, target->semaphore, "vulkan.gui.interop_semaphore")) {
                 const std::string error = std::format("target creation failed: {}", context.lastError());
                 if (target->image.image != VK_NULL_HANDLE || target->semaphore.semaphore != VK_NULL_HANDLE) {
                     target->destroy(context);

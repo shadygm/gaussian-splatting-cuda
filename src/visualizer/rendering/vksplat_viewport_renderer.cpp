@@ -382,7 +382,8 @@ namespace lfs::vis {
 
         void acquireOutputImageForReadback(VulkanContext& context,
                                            const VkCommandBuffer command_buffer,
-                                           const VkImage image) {
+                                           const VkImage image,
+                                           const std::uint64_t image_generation) {
             using AccessScope = VulkanImageBarrierTracker::AccessScope;
             constexpr AccessScope external_producer{};
             constexpr AccessScope transfer_read{
@@ -395,6 +396,7 @@ namespace lfs::vis {
             // no queue-local source scope and only describes its transfer use.
             context.imageBarriers().transitionImage(command_buffer,
                                                     image,
+                                                    image_generation,
                                                     VK_IMAGE_ASPECT_COLOR_BIT,
                                                     VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
                                                     external_producer,
@@ -664,7 +666,6 @@ namespace lfs::vis {
                 {"radix_sort/upsweep_indirect", (root / "radix_sort/upsweep_indirect.spv").string()},
                 {"radix_sort/spine_indirect", (root / "radix_sort/spine_indirect.spv").string()},
                 {"radix_sort/downsweep_indirect", (root / "radix_sort/downsweep_indirect.spv").string()},
-                {"seed_primitive_indices", (root / "generated/seed_primitive_indices.spv").string()},
                 {"apply_depth_ordering", (root / "generated/apply_depth_ordering.spv").string()},
                 {"visible_flags", (root / "generated/visible_flags.spv").string()},
                 {"prepare_visible_sort", (root / "generated/prepare_visible_sort.spv").string()},
@@ -1712,7 +1713,7 @@ namespace lfs::vis {
         VulkanContext& context,
         const std::string_view error_label,
         const std::string_view debug_name) {
-        if (!context.createExternalTimelineSemaphore(0, vk_semaphore)) {
+        if (!context.createExternalTimelineSemaphore(0, vk_semaphore, "vulkan.vksplat.timeline_semaphore")) {
             return std::unexpected(std::format(
                 "{} creation failed: {}", error_label, context.lastError()));
         }
@@ -1766,10 +1767,10 @@ namespace lfs::vis {
         const std::size_t output_index = outputSlotIndex(output_slot);
         for (auto& slot : output_slots_[output_index]) {
             if (slot.image.image != VK_NULL_HANDLE) {
-                context_->imageBarriers().forgetImage(slot.image.image);
+                context_->imageBarriers().forgetImage(slot.image.image, slot.image_generation);
             }
             if (slot.depth_image.image != VK_NULL_HANDLE) {
-                context_->imageBarriers().forgetImage(slot.depth_image.image);
+                context_->imageBarriers().forgetImage(slot.depth_image.image, slot.image_generation);
             }
             context_->destroyExternalImage(slot.image);
             context_->destroyExternalImage(slot.depth_image);
@@ -2019,10 +2020,10 @@ namespace lfs::vis {
             for (auto& logical_slot : output_slots_) {
                 for (auto& slot : logical_slot) {
                     if (slot.image.image != VK_NULL_HANDLE) {
-                        context_->imageBarriers().forgetImage(slot.image.image);
+                        context_->imageBarriers().forgetImage(slot.image.image, slot.image_generation);
                     }
                     if (slot.depth_image.image != VK_NULL_HANDLE) {
-                        context_->imageBarriers().forgetImage(slot.depth_image.image);
+                        context_->imageBarriers().forgetImage(slot.depth_image.image, slot.image_generation);
                     }
                     context_->destroyExternalImage(slot.image);
                     context_->destroyExternalImage(slot.depth_image);
@@ -2076,14 +2077,6 @@ namespace lfs::vis {
         gpu_lod_tree_ = {};
         initialized_ = false;
         context_ = nullptr;
-    }
-
-    std::optional<LodPageCache::Snapshot> VksplatViewportRenderer::lodPageCacheSnapshot(
-        const lfs::core::SplatData& splat_data) const {
-        if (lod_page_cache_model_ != &splat_data || !lod_page_cache_.configured()) {
-            return std::nullopt;
-        }
-        return lod_page_cache_.snapshot();
     }
 
     VksplatViewportRenderer::GpuLodSelectionStatus
@@ -3431,6 +3424,10 @@ namespace lfs::vis {
         if (shared_scratch_.imported_buffer.buffer == VK_NULL_HANDLE) {
             return;
         }
+        // All region views below collapse to this parent in the barrier planner;
+        // without adoption the whole shared-scratch path stays conservative
+        // (spec §2.2, sweep_d F-D03).
+        renderer_.trackExternalParent(shared_scratch_.imported_buffer.buffer);
 
         std::size_t cursor = 0;
         const auto bind_bytes = [&](auto& typed_buffer, const std::size_t bytes) {
@@ -3599,6 +3596,7 @@ namespace lfs::vis {
         release(gpu_lod_tree_.page_frames);
         release(gpu_lod_tree_.page_to_chunk);
         release(gpu_lod_tree_.chunk_to_page);
+        release(gpu_lod_tree_.page_age);
         gpu_lod_tree_ = {};
 
         if (lod_tree_meta_.buffer.buffer != VK_NULL_HANDLE) {
@@ -3621,6 +3619,7 @@ namespace lfs::vis {
         if (shared_buffer == VK_NULL_HANDLE) {
             return;
         }
+        renderer_.untrackExternalParent(shared_buffer);
         const auto detach = [shared_buffer](_VulkanBuffer& dev) {
             if (dev.buffer != shared_buffer || dev.allocation != VK_NULL_HANDLE) {
                 return;
@@ -4224,7 +4223,9 @@ namespace lfs::vis {
 
             // Exportable so CUDA (the trainer's release-fence wait) can consume
             // the same monotonic counter Vulkan signals at batch completion.
-            if (!context.createExternalTimelineSemaphore(0, render_complete_external_)) {
+            if (!context.createExternalTimelineSemaphore(0,
+                                                         render_complete_external_,
+                                                         "vulkan.vksplat.render_complete_semaphore")) {
                 return std::unexpected(std::format(
                     "VkSplat render completion timeline creation failed: {}",
                     context.lastError()));
@@ -4903,10 +4904,10 @@ namespace lfs::vis {
             vkHandleValue(slot.depth_image.image),
             context.lastError());
         if (slot.image.image != VK_NULL_HANDLE) {
-            context.imageBarriers().forgetImage(slot.image.image);
+            context.imageBarriers().forgetImage(slot.image.image, slot.image_generation);
         }
         if (slot.depth_image.image != VK_NULL_HANDLE) {
-            context.imageBarriers().forgetImage(slot.depth_image.image);
+            context.imageBarriers().forgetImage(slot.depth_image.image, slot.image_generation);
         }
         context.destroyExternalImage(slot.image);
         context.destroyExternalImage(slot.depth_image);
@@ -4964,16 +4965,18 @@ namespace lfs::vis {
                                     "vksplat.output[{}].{}.depth.memory",
                                     ring_slot,
                                     outputSlotDiagnosticName(output_slot));
+        ++slot.image_generation;
         context.imageBarriers().registerImage(slot.image.image,
+                                              slot.image_generation,
                                               VK_IMAGE_ASPECT_COLOR_BIT,
                                               VK_IMAGE_LAYOUT_UNDEFINED,
                                               /*external=*/true);
         context.imageBarriers().registerImage(slot.depth_image.image,
+                                              slot.image_generation,
                                               VK_IMAGE_ASPECT_COLOR_BIT,
                                               VK_IMAGE_LAYOUT_UNDEFINED,
                                               /*external=*/true);
         slot.size = size;
-        ++slot.generation;
         return {};
     }
 
@@ -5160,12 +5163,14 @@ namespace lfs::vis {
             // wait retires the previous fragment read; it is not work performed by
             // this queue and therefore has an empty source scope here.
             const bool has_previous_contents =
-                context.imageBarriers().imageLayout(image) != VK_IMAGE_LAYOUT_UNDEFINED;
+                context.imageBarriers().imageLayout(image, output.image_generation) !=
+                VK_IMAGE_LAYOUT_UNDEFINED;
             const AccessScope source = has_previous_contents && !cross_queue_output
                                            ? fragment_sample
                                            : external_dependency;
             context.imageBarriers().transitionImage(cmd,
                                                     image,
+                                                    output.image_generation,
                                                     VK_IMAGE_ASPECT_COLOR_BIT,
                                                     layout,
                                                     source,
@@ -5180,6 +5185,7 @@ namespace lfs::vis {
             context.imageBarriers().transitionImage(
                 cmd,
                 image,
+                output.image_generation,
                 VK_IMAGE_ASPECT_COLOR_BIT,
                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                 producer,
@@ -5917,7 +5923,8 @@ namespace lfs::vis {
                 : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         acquireOutputImageForReadback(context,
                                       command_buffer,
-                                      output.depth_image.image);
+                                      output.depth_image.image,
+                                      output.image_generation);
 
         VkBufferImageCopy copy_region{};
         copy_region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -5937,6 +5944,7 @@ namespace lfs::vis {
         context.imageBarriers().transitionImage(
             command_buffer,
             output.depth_image.image,
+            output.image_generation,
             VK_IMAGE_ASPECT_COLOR_BIT,
             restore_layout);
 
@@ -6075,7 +6083,8 @@ namespace lfs::vis {
                 : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         acquireOutputImageForReadback(context,
                                       command_buffer,
-                                      output.image.image);
+                                      output.image.image,
+                                      output.image_generation);
 
         VkBufferImageCopy copy_region{};
         copy_region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -6094,6 +6103,7 @@ namespace lfs::vis {
         context.imageBarriers().transitionImage(
             command_buffer,
             output.image.image,
+            output.image_generation,
             VK_IMAGE_ASPECT_COLOR_BIT,
             restore_layout);
 
@@ -6247,7 +6257,8 @@ namespace lfs::vis {
                 : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
         acquireOutputImageForReadback(context,
                                       command_buffer,
-                                      output.depth_image.image);
+                                      output.depth_image.image,
+                                      output.image_generation);
 
         VkBufferImageCopy copy_region{};
         copy_region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -6264,6 +6275,7 @@ namespace lfs::vis {
         context.imageBarriers().transitionImage(
             command_buffer,
             output.depth_image.image,
+            output.image_generation,
             VK_IMAGE_ASPECT_COLOR_BIT,
             restore_layout);
 
