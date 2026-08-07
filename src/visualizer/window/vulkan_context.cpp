@@ -1827,6 +1827,61 @@ namespace lfs::vis {
         return retired;
     }
 
+    bool VulkanContext::getTimelineSemaphoreCounterValue(const VkSemaphore semaphore,
+                                                         std::uint64_t& out_value) const {
+        out_value = 0;
+        if (device_ == VK_NULL_HANDLE || semaphore == VK_NULL_HANDLE) {
+            return false;
+        }
+        const VkResult result = vkGetSemaphoreCounterValue(device_, semaphore, &out_value);
+        return result == VK_SUCCESS;
+    }
+
+    bool VulkanContext::waitForRetiredFrameSubmitSerial(const std::uint64_t serial) {
+        if (serial == 0 || device_ == VK_NULL_HANDLE) {
+            return true;
+        }
+        if (retiredFrameSubmitSerial() >= serial) {
+            return true;
+        }
+
+        // Bound the wait so a wedged GPU surfaces as an error rather than a hang.
+        // Matches waitForFrameFences (2 s); healthy frames complete in <16 ms.
+        constexpr std::uint64_t kRetiredSerialWaitTimeoutNs = 2'000'000'000ull;
+        std::vector<VkFence> fences;
+        fences.reserve(kFramesInFlight);
+        // Only in_flight_ slots whose submit serial is still relevant. Swapchain
+        // image aliases (swapchain_images_in_flight_) hold the same fence objects
+        // assigned in endFrame, so listing them separately would only duplicate.
+        for (std::size_t i = 0; i < kFramesInFlight; ++i) {
+            const std::uint64_t slot_serial = frame_submit_serials_[i];
+            if (slot_serial == 0 || slot_serial > serial) {
+                continue;
+            }
+            const VkFence fence = in_flight_[i];
+            if (fence != VK_NULL_HANDLE) {
+                fences.push_back(fence);
+            }
+        }
+        if (fences.empty()) {
+            return true;
+        }
+
+        const VkResult result = vkWaitForFences(device_,
+                                                static_cast<std::uint32_t>(fences.size()),
+                                                fences.data(),
+                                                VK_TRUE,
+                                                kRetiredSerialWaitTimeoutNs);
+        if (result != VK_SUCCESS) {
+            return fail(std::format(
+                "vkWaitForFences(retired frame serial {}) failed: {} (fences={})",
+                serial,
+                vkResultToString(result),
+                fences.size()));
+        }
+        return true;
+    }
+
     bool VulkanContext::waitForImmediateSubmits() {
         if (device_ == VK_NULL_HANDLE || pending_immediate_submits_.empty()) {
             return true;
@@ -2283,11 +2338,6 @@ namespace lfs::vis {
         props2.pNext = &id_props;
         vkGetPhysicalDeviceProperties2(physical_device_, &props2);
         std::memcpy(device_uuid_.data(), id_props.deviceUUID, VK_UUID_SIZE);
-#ifdef _WIN32
-        std::memcpy(device_luid_.data(), id_props.deviceLUID, VK_LUID_SIZE);
-        device_luid_valid_ = id_props.deviceLUIDValid != VK_FALSE;
-        device_node_mask_ = id_props.deviceNodeMask;
-#endif
         return true;
     }
 
@@ -2535,8 +2585,8 @@ namespace lfs::vis {
         }
 
         // 16-bit storage for the fp16 splat raster path (half4 partials,
-        // half-packed staging). Mirrors device support; consumers must check
-        // hasFloat16Storage() and fall back to fp32 shader variants.
+        // half-packed staging). Features are enabled when the device supports them;
+        // runtime float16 capability is probed via VulkanGSRenderer::supportsFloat16Storage().
         VkPhysicalDeviceVulkan11Features features11{};
         features11.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES;
         features11.storageBuffer16BitAccess = supported_features11.storageBuffer16BitAccess;
@@ -2616,8 +2666,6 @@ namespace lfs::vis {
         external_memory_dedicated_allocation_enabled_ = enable_dedicated_allocation;
         swapchain_maintenance1_enabled_ = enable_swapchain_maintenance1;
         has_push_descriptor_ = enable_push_descriptor;
-        has_float16_storage_ = features12.shaderFloat16 == VK_TRUE &&
-                               features11.storageBuffer16BitAccess == VK_TRUE;
         has_conditional_rendering_ = enable_conditional_rendering;
         has_host_image_copy_ = enable_host_image_copy_feature;
         has_fill_mode_non_solid_ = features2.features.fillModeNonSolid == VK_TRUE;
@@ -4022,7 +4070,6 @@ namespace lfs::vis {
         recordCurrentVulkanBytes("vulkan.swapchain", "driver_owned_images_estimate", swapchain_estimated_bytes_);
         swapchain_images_in_flight_.assign(image_count, VK_NULL_HANDLE);
         swapchain_format_ = surface_format.format;
-        swapchain_color_space_ = surface_format.colorSpace;
         swapchain_extent_fixed_to_surface_ = extent_fixed_to_surface;
         swapchain_present_scaling_enabled_ = use_present_scaling;
         has_hdr_ = surface_format.colorSpace != VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;

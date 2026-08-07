@@ -20,6 +20,10 @@ namespace lfs::vis {
 
     // Pure early-path decision for per-slot interop prepare. No Vulkan/CUDA calls.
     // Used by ViewportInteropService::prepareChannel and unit tests.
+    //
+    // target_size_matches: bucket/alloc match (ceil64 source vs target alloc).
+    // target_valid_size_matches: logical source size equals stored valid size.
+    // Within-bucket valid-size change is SlowPath re-upload, not recreate (DeferBail).
     struct ViewportInteropSlotInputs {
         bool disabled = false;
         bool external_handle_early_out = false;
@@ -30,7 +34,8 @@ namespace lfs::vis {
         bool slot_array_resize_needed = false;
         bool frame_slot_in_range = false;
         bool target_present = false;
-        bool target_size_matches = false;
+        bool target_size_matches = false;       // bucket match
+        bool target_valid_size_matches = false; // logical size match
         bool target_interop_valid = false;
         bool target_layout_read_only = false;
         std::uint64_t source_generation = 0;
@@ -50,7 +55,6 @@ namespace lfs::vis {
         ViewportInteropAction action = ViewportInteropAction::SlowPath;
         bool clear_published = false;
         bool publish_from_target = false;
-        bool reset_targets_if_nonempty = false;
     };
 
     [[nodiscard]] inline ViewportInteropDecision
@@ -65,14 +69,16 @@ namespace lfs::vis {
             return {
                 .action = ViewportInteropAction::InvalidReset,
                 .clear_published = in.publishes_published,
-                .reset_targets_if_nonempty = true,
             };
         }
 
+        // Recreate only when the pooled unit is missing, bucket mismatches, or interop is dead.
+        // Within-bucket valid-size changes are re-uploads (SlowPath), not recreates.
         const bool recreate_needed =
             !in.target_present || !in.target_size_matches || !in.target_interop_valid;
         if (!in.slot_array_resize_needed && in.frame_slot_in_range) {
             if (!recreate_needed &&
+                in.target_valid_size_matches &&
                 in.source_generation != 0 &&
                 in.uploaded_source_generation == in.source_generation &&
                 in.target_layout_read_only) {
@@ -169,12 +175,16 @@ namespace lfs::vis {
         };
 
         struct Channel;
+        struct PooledInteropUnit;
+        struct VulkanSceneInteropTarget;
 
         void prepareChannel(VulkanContext& context, Channel& channel, bool resize_deferring);
         void resetChannel(Channel& channel);
         void clearPublished(Channel& channel);
-        void publishFromTarget(Channel& channel, const struct VulkanSceneInteropTarget& target);
+        void publishFromTarget(Channel& channel, const VulkanSceneInteropTarget& target);
         void ensureUploadStream();
+        void drainInteropPool(VulkanContext& context, bool force);
+        void releaseSlotTarget(VulkanContext& context, VulkanSceneInteropTarget& target);
         [[nodiscard]] bool sourceOk(const Channel& channel) const;
         [[nodiscard]] static ChannelPolicy policyFor(ChannelId id);
 
@@ -195,9 +205,13 @@ namespace lfs::vis {
         VkSemaphore frame_completion_semaphore_ = VK_NULL_HANDLE;
         std::uint64_t frame_completion_value_ = 0;
 
-        // Channels are heap-allocated so Channel can hold incomplete VulkanSceneInteropTarget.
+        // Channels are heap-allocated so Channel can hold incomplete types.
         struct ChannelStorage;
         std::unique_ptr<ChannelStorage> channels_;
+
+        // One pool across Scene / SplitRight / DepthBlit (keys partition by format).
+        struct InteropPoolStorage;
+        std::unique_ptr<InteropPoolStorage> interop_pool_;
     };
 
 } // namespace lfs::vis

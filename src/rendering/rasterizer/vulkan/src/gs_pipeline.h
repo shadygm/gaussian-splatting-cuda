@@ -70,6 +70,8 @@ public:
 
     void createBuffer(size_t size, _VulkanBuffer& buffer);
     void destroyBuffer(_VulkanBuffer& buffer);
+    // Caller must prove via timeline wait that no submitted batch still references the buffer.
+    void destroyBufferRetired(_VulkanBuffer& buffer);
     void resizeDeviceBuffer(_VulkanBuffer& deviceBuffer, size_t new_byte_size, bool no_shrink = true);
     template <typename T>
     _VulkanBuffer& resizeDeviceBuffer(Buffer<T>& buffer, size_t new_size, bool no_shrink = true);
@@ -304,16 +306,9 @@ protected:
         _ComputePipeline& pipeline,
         const std::vector<_VulkanBuffer>& buffers);
 
-    // Indirect dispatch variant. The dispatch group counts come from a
-    // GPU-resident VkDispatchIndirectCommand at (indirect_buffer, offset).
-    void executeComputeIndirect(
-        const _VulkanBuffer& indirect_buffer,
-        VkDeviceSize indirect_offset,
-        const void* uniformsPtr, size_t uniformSize,
-        _ComputePipeline& pipeline,
-        const std::vector<_VulkanBuffer>& buffers);
-
     // Epic #1496 §3.1: planner-driven dispatch (plan once, emit ≤1 barrier2, shared bind path).
+    // Indirect dispatch: group counts come from a GPU-resident VkDispatchIndirectCommand
+    // at (indirect_buffer, offset).
     void executeCompute(
         std::vector<std::pair<size_t, size_t>> dims,
         const void* uniformsPtr, size_t uniformSize,
@@ -328,6 +323,8 @@ protected:
 
 private:
     void destroyComputePipeline(_ComputePipeline& pipeline);
+    // Shared destroy path for destroyBuffer (wait) / destroyBufferRetired (no wait).
+    void destroyBufferImpl(_VulkanBuffer& buffer, bool wait_for_pending_batch, const char* caller_name);
 
     // Shared bind / push-descriptor / push-constants / dispatch recording (batch must be active).
     void recordComputeDispatch(
