@@ -312,7 +312,7 @@ namespace nvimgcodec {
 #define IMPL_HAS_UNIQUE_MEMBER_FUNCTION(function_name)            \
     template <typename T>                                         \
     std::is_member_function_pointer<decltype(&T::function_name)>  \
-    HasUniqueMemberFunction_##function_name(T*);                  \
+        HasUniqueMemberFunction_##function_name(T*);              \
     template <typename T>                                         \
     std::false_type HasUniqueMemberFunction_##function_name(...); \
     template <typename T>                                         \

@@ -35,7 +35,7 @@ namespace nvimgcodec {
 
 // Sentinel distinguishable from any real CUcontext value (including NULL),
 // so the destructor can faithfully restore a NULL "uninitialized" context.
-#define NVIMGCODEC_INVALID_CONTEXT ((CUcontext)(intptr_t)-1) // NOLINT
+#define NVIMGCODEC_INVALID_CONTEXT ((CUcontext)(intptr_t) - 1) // NOLINT
 
         struct PrimaryContext {
             ~PrimaryContext() {
