@@ -4,9 +4,9 @@
 
 #pragma once
 
+#include <cstdint>
 #include <memory>
 #include <optional>
-#include <cstdint>
 #include <string>
 #include <vector>
 
