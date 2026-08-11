@@ -27,7 +27,6 @@ namespace lfs::training::sh_value {
             const float qf = fminf(fmaxf(roundf(kQMaxDevice * (v - lo) / range), 0.0f), kQMaxDevice);
             return static_cast<uint16_t>(qf);
         }
-
     };
 
     // Cell-linear swizzle index for q16 values (pad-dropped layout).

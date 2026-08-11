@@ -611,8 +611,7 @@ namespace lfs::core {
         // this constructor without repeating the layout tag.  Preserve those coefficients
         // instead of silently treating the rank-1 storage as an empty canonical tensor.
         if (shN_layout == ShNLayout::Canonical && shN_.is_valid() && shN_.ndim() == 1 &&
-            n > 0 && static_cast<size_t>(shN_.numel()) ==
-                         sh_swizzled_float_count(n, layout_coeffs_rest)) {
+            n > 0 && static_cast<size_t>(shN_.numel()) == sh_swizzled_float_count(n, layout_coeffs_rest)) {
             shN_layout = ShNLayout::Swizzled;
         }
         if (shN_layout == ShNLayout::Swizzled) {

@@ -20,8 +20,8 @@
 
 #include <algorithm>
 #include <cassert>
-#include <charconv>
 #include <cerrno>
+#include <charconv>
 #include <cstdlib>
 #include <cstring>
 #include <exception>
@@ -879,10 +879,10 @@ namespace lfs::io {
             if (decoded_frame_ring_)
                 decoded_frame_ring_->set_capacity(next + 2);
             LOG_DEBUG("[PipelinedImageLoader] adaptive prefetch target={} occupancy={} decode_ema={:.3f}ms train_ema={:.3f}ms",
-                     adaptive_target_,
-                     adaptive_occupancy_,
-                     decode_latency_ema_ms_,
-                     train_latency_ema_ms_);
+                      adaptive_target_,
+                      adaptive_occupancy_,
+                      decode_latency_ema_ms_,
+                      train_latency_ema_ms_);
         }
     }
 

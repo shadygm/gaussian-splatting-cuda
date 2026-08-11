@@ -152,7 +152,8 @@ namespace lfs::training {
             summary << elapsed << "s (avg " << std::setprecision(1)
                     << (elapsed > 0.0 ? iterations_used / elapsed : 0.0) << " iter/s)";
         }
-        std::cout << std::endl << summary.str() << std::endl
+        std::cout << std::endl
+                  << summary.str() << std::endl
 #ifdef _WIN32
                   << "* Final splats: " << final_splats
 #else

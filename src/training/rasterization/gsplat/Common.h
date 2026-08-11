@@ -7,13 +7,13 @@
 #include "core/alloc_counter.hpp"
 #include "core/assert.hpp"
 #include "core/checked_arithmetic.hpp"
+#include "core/crash_handler.hpp"
 #include "core/cuda_allocation.hpp"
 #include "core/cuda_error.hpp"
-#include "core/crash_handler.hpp"
 #include "core/memory_pressure.hpp"
 
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <string>
 #include <string_view>
@@ -174,7 +174,8 @@ namespace gsplat_lfs {
         }
 
         [[nodiscard]] void* get() const noexcept { return ptr_; }
-        template <typename T> [[nodiscard]] T* as() const noexcept {
+        template <typename T>
+        [[nodiscard]] T* as() const noexcept {
             return static_cast<T*>(ptr_);
         }
         [[nodiscard]] size_t size() const noexcept { return bytes_; }

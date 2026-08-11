@@ -11,9 +11,9 @@
 #include "core/tensor/internal/gpu_slab_allocator.hpp"
 #include "core/tensor/internal/memory_pool.hpp"
 
+#include <atomic>
 #include <cuda_runtime.h>
 #include <gtest/gtest.h>
-#include <atomic>
 #include <vector>
 
 using namespace lfs::core;

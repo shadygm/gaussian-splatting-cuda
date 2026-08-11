@@ -683,7 +683,7 @@ namespace lfs::core {
         if (shN_selected_canonical.is_valid() && shN_selected_canonical.numel() > 0) {
             splat_data._shN_value_bounds = Tensor{};
             splat_data.shN_set_from_canonical(shN_selected_canonical,
-                                             static_cast<size_t>(num_required_splat));
+                                              static_cast<size_t>(num_required_splat));
         } else if (shN_selected_swizzled.is_valid() && shN_selected_swizzled.numel() > 0) {
             splat_data._shN = std::move(shN_selected_swizzled);
         }

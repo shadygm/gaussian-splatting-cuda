@@ -96,7 +96,6 @@ namespace lfs::training::joint_adam {
             const float inv_s = 1.0f / fmaxf(mm.w - mm.z, kEpsDevice);
             encode_us(packed, idx, u_val, log_s_val, mm.x, mm.z, inv_u, inv_s);
         }
-
     };
 
 } // namespace lfs::training::joint_adam

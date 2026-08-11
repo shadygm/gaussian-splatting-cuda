@@ -63,7 +63,9 @@ namespace lfs::io {
 
     class LFS_IO_API CacheLoader {
     public:
-        enum class CacheMode { Undetermined, NoCache, CPU_memory };
+        enum class CacheMode { Undetermined,
+                               NoCache,
+                               CPU_memory };
         enum class NvImageCodecMode { Undetermined,
                                       Available,
                                       UnAvailable };

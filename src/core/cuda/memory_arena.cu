@@ -409,7 +409,6 @@ namespace lfs::core {
             if (it != device_arenas_.end() && it->second) {
                 // Reset the offset to reuse the buffer from the beginning
                 it->second->offset.store(0, std::memory_order_release);
-
             }
         }
 
@@ -1170,7 +1169,8 @@ namespace lfs::core {
         const auto timing_start = std::chrono::steady_clock::now();
         const auto record_timing = [this, frame_id, &timing_start](bool committed) {
             const auto elapsed_us = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
-                std::chrono::steady_clock::now() - timing_start).count());
+                                                              std::chrono::steady_clock::now() - timing_start)
+                                                              .count());
             record_commit_timing(frame_id, elapsed_us, committed);
         };
 
@@ -1517,7 +1517,8 @@ namespace lfs::core {
         sync_lock.unlock();
         sync_cv_.notify_all();
         const auto elapsed_us = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
-            std::chrono::steady_clock::now() - timing_start).count());
+                                                          std::chrono::steady_clock::now() - timing_start)
+                                                          .count());
         record_boundary_timing(release_all, frame_count, elapsed_us);
         return success;
     }
@@ -1732,7 +1733,8 @@ namespace lfs::core {
                     const auto sync_start = std::chrono::steady_clock::now();
                     const cudaError_t sync_status = cudaDeviceSynchronize();
                     sync_elapsed_us = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
-                        std::chrono::steady_clock::now() - sync_start).count());
+                                                                std::chrono::steady_clock::now() - sync_start)
+                                                                .count());
                     if (sync_status != cudaSuccess) {
                         ensure_cuda_success(
                             sync_status, "cudaDeviceSynchronize(arena VMM growth)",
@@ -1748,7 +1750,8 @@ namespace lfs::core {
             record_growth_path_timing(
                 frame_id,
                 static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
-                    std::chrono::steady_clock::now() - growth_start).count()),
+                                          std::chrono::steady_clock::now() - growth_start)
+                                          .count()),
                 sync_elapsed_us);
 
             if (!success) {

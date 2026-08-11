@@ -4,8 +4,8 @@
 
 #include <gtest/gtest.h>
 
-#include "core/path_utils.hpp"
 #include "core/cuda/undistort/undistort.hpp"
+#include "core/path_utils.hpp"
 #include "io/nvcodec_image_loader.hpp"
 #include "io/pipelined_image_loader.hpp"
 

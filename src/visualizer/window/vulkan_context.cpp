@@ -1382,7 +1382,7 @@ namespace lfs::vis {
     }
 
     bool VulkanContext::restartActiveRendering(const VkCommandBuffer command_buffer,
-                                                const Frame& frame) {
+                                               const Frame& frame) {
         if (!frame_active_)
             return fail("Cannot restart Vulkan rendering without an active frame");
         if (frame_rendering_active_)

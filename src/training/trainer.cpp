@@ -6285,10 +6285,10 @@ namespace lfs::training {
                     const auto stats = train_dataloader->get_stats();
                     LOG_DEBUG("[PipelinedImageLoader] after epoch 2: {} compressed entries, {:.1f} MiB RAM, "
                               "{} hits, {} misses",
-                             stats.jpeg_cache_entries,
-                             stats.jpeg_cache_bytes / (1024.0 * 1024.0),
-                             stats.hot_path_hits,
-                             stats.cold_path_misses);
+                              stats.jpeg_cache_entries,
+                              stats.jpeg_cache_bytes / (1024.0 * 1024.0),
+                              stats.hot_path_hits,
+                              stats.cold_path_misses);
                     logged_epoch2_loader_cache = true;
                 }
 
@@ -6536,7 +6536,7 @@ namespace lfs::training {
         PPISPControllerPool* controller_to_save = controller_pool_for_save(iter_num);
 
         if (save_checkpoint_file) {
-                auto ckpt_result = lfs::training::save_checkpoint(save_path, iter_num, *strategy_,
+            auto ckpt_result = lfs::training::save_checkpoint(save_path, iter_num, *strategy_,
                                                               params_for_checkpoint_save(),
                                                               bilateral_grid_.get(), ppisp_.get(), controller_to_save,
                                                               /*durable=*/durable_checkpoint);

@@ -19,7 +19,7 @@ namespace lfs::training {
 
     namespace {
         [[nodiscard]] std::uint64_t deterministic_mcmc_seed(const int iteration,
-                                                             const std::uint64_t stream) {
+                                                            const std::uint64_t stream) {
             // Derive each stochastic operation from the absolute training
             // iteration.  A resumed trainer therefore emits the same MCMC
             // mutations as an uninterrupted run without serializing a CUDA

@@ -14,8 +14,8 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <gtest/gtest.h>
 #include <memory>
-#include <stdexcept>
 #include <sstream>
+#include <stdexcept>
 #include <system_error>
 #include <vector>
 

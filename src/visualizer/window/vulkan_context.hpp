@@ -259,7 +259,7 @@ namespace lfs::vis {
         // are recorded. These helpers bracket that interop window.
         [[nodiscard]] bool finishActiveRendering(VkCommandBuffer command_buffer);
         [[nodiscard]] bool restartActiveRendering(VkCommandBuffer command_buffer,
-                                                   const Frame& frame);
+                                                  const Frame& frame);
         [[nodiscard]] bool endFrame();
         [[nodiscard]] bool hasActiveFrame() const noexcept { return frame_active_; }
         [[nodiscard]] LFS_VIS_API std::expected<WindowCapture, std::string> captureAndEndActiveFrameRgba();
