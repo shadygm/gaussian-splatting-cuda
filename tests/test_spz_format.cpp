@@ -2,6 +2,11 @@
  *
  * SPDX-License-Identifier: GPL-3.0-or-later */
 
+// SPZ format tests. Upstream-equivalent fixtures (v3/v4 SH0-3, coordinate
+// declarations, forged unknown version) are generated once per suite via the
+// vendored nianticlabs/spz writer rather than checked in, to keep binaries
+// out of git.
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -10,9 +15,12 @@
 #include <filesystem>
 #include <fstream>
 #include <gtest/gtest.h>
+#include <memory>
 #include <string>
+#include <system_error>
 #include <vector>
 
+#include "coordinate-system-adobe.h"
 #include "core/splat_data.hpp"
 #include "io/exporter.hpp"
 #include "io/formats/spz.hpp"
@@ -23,6 +31,42 @@ namespace fs = std::filesystem;
 using namespace lfs::core;
 using namespace lfs::io;
 
+static float fixture_rand(uint32_t& state) {
+    state = state * 1664525u + 1013904223u;
+    return (state >> 8) * (1.0f / 16777216.0f); // [0,1)
+}
+
+static spz::GaussianCloud make_fixture_cloud(int sh_degree, int num_points, uint32_t seed) {
+    spz::GaussianCloud c;
+    c.numPoints = num_points;
+    c.shDegree = sh_degree;
+    uint32_t s = seed;
+    const int sh_per_point = (sh_degree == 0) ? 0 : (sh_degree == 1) ? 9
+                                                : (sh_degree == 2)   ? 24
+                                                                     : 45;
+    for (int i = 0; i < num_points; i++) {
+        for (int k = 0; k < 3; k++)
+            c.positions.push_back(fixture_rand(s) * 10.0f - 5.0f);
+        for (int k = 0; k < 3; k++)
+            c.scales.push_back(fixture_rand(s) * -6.0f);
+        float q[4];
+        float norm = 0;
+        for (int k = 0; k < 4; k++) {
+            q[k] = fixture_rand(s) * 2.0f - 1.0f;
+            norm += q[k] * q[k];
+        }
+        norm = std::sqrt(norm);
+        for (int k = 0; k < 4; k++)
+            c.rotations.push_back(q[k] / norm);
+        c.alphas.push_back(fixture_rand(s) * 8.0f - 4.0f);
+        for (int k = 0; k < 3; k++)
+            c.colors.push_back(fixture_rand(s) * 2.0f - 1.0f);
+        for (int k = 0; k < sh_per_point; k++)
+            c.sh.push_back(fixture_rand(s) * 0.5f - 0.25f);
+    }
+    return c;
+}
+
 class SpzFormatTest : public ::testing::Test {
 protected:
     static constexpr float EPSILON = 1e-4f;
@@ -31,12 +75,97 @@ protected:
     const fs::path test_ply = fs::path(PROJECT_ROOT_PATH) / "windmill.ply";
     const fs::path temp_dir = fs::temp_directory_path() / "lfs_spz_test";
 
+    static fs::path fixture_dir() {
+        return fs::temp_directory_path() / "lfs_spz_test" / "fixtures";
+    }
+
+    static bool write_spz_file(
+        const fs::path& path,
+        const spz::GaussianCloud& cloud,
+        uint32_t version) {
+        spz::PackOptions options;
+        options.from = spz::CoordinateSystem::RDF;
+        options.version = version;
+        return spz::saveSpz(cloud, options, path.string());
+    }
+
+    static void attach_coordinate_extension(
+        spz::GaussianCloud& cloud,
+        spz::CoordinateSystem system) {
+        auto ext = std::make_shared<spz::SpzExtensionCoordinateSystemAdobe>();
+        ext->coordinateSystem = system;
+        cloud.extensions.push_back(std::move(ext));
+    }
+
+    static void write_upstream_fixtures(const fs::path& dir) {
+        for (int degree = 0; degree <= 3; ++degree) {
+            auto cloud = make_fixture_cloud(degree, 100, 42u + static_cast<uint32_t>(degree));
+            const auto v3_name = std::string("upstream_v3_sh") + std::to_string(degree) + ".spz";
+            const auto v4_name = std::string("upstream_v4_sh") + std::to_string(degree) + ".spz";
+            ASSERT_TRUE(write_spz_file(dir / v3_name, cloud, 3)) << v3_name;
+            attach_coordinate_extension(cloud, spz::CoordinateSystem::RDF);
+            ASSERT_TRUE(write_spz_file(dir / v4_name, cloud, 4)) << v4_name;
+        }
+
+        {
+            const auto cloud = make_fixture_cloud(3, 100, 7u);
+            ASSERT_TRUE(write_spz_file(dir / "upstream_v4_noext.spz", cloud, 4));
+        }
+
+        {
+            const auto cloud = make_fixture_cloud(3, 100, 777u);
+            auto rdf = cloud;
+            attach_coordinate_extension(rdf, spz::CoordinateSystem::RDF);
+            ASSERT_TRUE(write_spz_file(dir / "upstream_v4_declRDF.spz", rdf, 4));
+            auto rub = cloud;
+            attach_coordinate_extension(rub, spz::CoordinateSystem::RUB);
+            ASSERT_TRUE(write_spz_file(dir / "upstream_v4_declRUB.spz", rub, 4));
+        }
+
+        {
+            std::ifstream in(dir / "upstream_v4_noext.spz", std::ios::binary | std::ios::ate);
+            ASSERT_TRUE(in.good());
+            const auto size = static_cast<size_t>(in.tellg());
+            ASSERT_GE(size, 8u);
+            in.seekg(0, std::ios::beg);
+            std::vector<uint8_t> bytes(size);
+            in.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(size));
+            ASSERT_TRUE(in.good());
+            const uint32_t bad_version = 99;
+            std::memcpy(bytes.data() + 4, &bad_version, sizeof(bad_version));
+            std::ofstream out(dir / "upstream_v99_bad.spz", std::ios::binary | std::ios::trunc);
+            out.write(reinterpret_cast<const char*>(bytes.data()),
+                      static_cast<std::streamsize>(bytes.size()));
+            ASSERT_TRUE(out.good());
+        }
+    }
+
+    static void SetUpTestSuite() {
+        const auto dir = fixture_dir();
+        fs::create_directories(dir);
+        write_upstream_fixtures(dir);
+    }
+
+    static void TearDownTestSuite() {
+        fs::remove_all(fs::temp_directory_path() / "lfs_spz_test");
+    }
+
     void SetUp() override {
         fs::create_directories(temp_dir);
+        fs::create_directories(fixture_dir());
     }
 
     void TearDown() override {
-        fs::remove_all(temp_dir);
+        std::error_code ec;
+        std::vector<fs::path> stale;
+        for (const auto& entry : fs::directory_iterator(temp_dir, ec)) {
+            if (entry.path().filename() != "fixtures") {
+                stale.push_back(entry.path());
+            }
+        }
+        for (const auto& path : stale) {
+            fs::remove_all(path, ec);
+        }
     }
 
     // Create SplatData with known values for testing
@@ -149,7 +278,7 @@ protected:
     }
 
     static fs::path fixture_path(const char* filename) {
-        return fs::path(PROJECT_ROOT_PATH) / "tests" / "data" / "spz" / filename;
+        return fixture_dir() / filename;
     }
 
     static std::vector<uint8_t> read_file_prefix(const fs::path& path, size_t n) {
