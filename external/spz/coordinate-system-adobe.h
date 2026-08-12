@@ -30,39 +30,39 @@ SOFTWARE.
 
 namespace spz {
 
-// Records the coordinate system in which the Gaussian data is physically stored in the file.
-//
-// This is a descriptor, not an instruction. It labels what coordinate system the packed data is
-// already in — it does not tell the reader to apply any conversion. packGaussians and
-// unpackGaussians consume this extension internally and handle all conversions automatically via
-// PackOptions::from and UnpackOptions::to. Consumers using those functions must not apply any
-// additional conversion based on this extension; doing so will double-transform the data.
-//
-// Mechanics: when present with a non-UNSPECIFIED value, packGaussians writes data in
-// coordinateSystem (instead of the default RUB), and unpackGaussians reads from coordinateSystem
-// (instead of RUB) before converting to UnpackOptions::to.
-//
-// UNSPECIFIED is equivalent to the extension being absent: both fall back to RUB, but a present
-// UNSPECIFIED value is likely a writer bug and will produce a warning.
-struct SpzExtensionCoordinateSystemAdobe : public SpzExtensionBase {
-  CoordinateSystem coordinateSystem = CoordinateSystem::UNSPECIFIED;
+    // Records the coordinate system in which the Gaussian data is physically stored in the file.
+    //
+    // This is a descriptor, not an instruction. It labels what coordinate system the packed data is
+    // already in — it does not tell the reader to apply any conversion. packGaussians and
+    // unpackGaussians consume this extension internally and handle all conversions automatically via
+    // PackOptions::from and UnpackOptions::to. Consumers using those functions must not apply any
+    // additional conversion based on this extension; doing so will double-transform the data.
+    //
+    // Mechanics: when present with a non-UNSPECIFIED value, packGaussians writes data in
+    // coordinateSystem (instead of the default RUB), and unpackGaussians reads from coordinateSystem
+    // (instead of RUB) before converting to UnpackOptions::to.
+    //
+    // UNSPECIFIED is equivalent to the extension being absent: both fall back to RUB, but a present
+    // UNSPECIFIED value is likely a writer bug and will produce a warning.
+    struct SpzExtensionCoordinateSystemAdobe : public SpzExtensionBase {
+        CoordinateSystem coordinateSystem = CoordinateSystem::UNSPECIFIED;
 
-  SpzExtensionCoordinateSystemAdobe();
-  uint32_t payloadBytes() const override;
-  void write(std::ostream& os) const override;
-  SpzExtensionBase* copyAsRawData() const override;
-  std::optional<std::shared_ptr<SpzExtensionBase>> tryReadFromPly(
-      std::istream& in, const std::unordered_set<std::string>& elementNames) const override;
-  void writePlyHeader(std::ostream& out) const override;
-  void writePlyData(std::ostream& out) const override;
-  static std::optional<SpzExtensionBasePtr> read(std::istream& is);
-  static SpzExtensionType type();
+        SpzExtensionCoordinateSystemAdobe();
+        uint32_t payloadBytes() const override;
+        void write(std::ostream& os) const override;
+        SpzExtensionBase* copyAsRawData() const override;
+        std::optional<std::shared_ptr<SpzExtensionBase>> tryReadFromPly(
+            std::istream& in, const std::unordered_set<std::string>& elementNames) const override;
+        void writePlyHeader(std::ostream& out) const override;
+        void writePlyData(std::ostream& out) const override;
+        static std::optional<SpzExtensionBasePtr> read(std::istream& is);
+        static SpzExtensionType type();
 
-  // Returns the storage coordinate system recorded by this extension.
-  // Returns RUB and logs a warning if coordinateSystem is UNSPECIFIED (likely a writer bug).
-  CoordinateSystem resolve() const;
-};
+        // Returns the storage coordinate system recorded by this extension.
+        // Returns RUB and logs a warning if coordinateSystem is UNSPECIFIED (likely a writer bug).
+        CoordinateSystem resolve() const;
+    };
 
-}  // namespace spz
+} // namespace spz
 
-#endif  // SPZ_COORDINATE_SYSTEM_ADOBE_H_
+#endif // SPZ_COORDINATE_SYSTEM_ADOBE_H_

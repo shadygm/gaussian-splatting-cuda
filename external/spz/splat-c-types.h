@@ -34,8 +34,8 @@ SOFTWARE.
 // These types are used to bridge between the C++ API and C (to interop with Swift and C#).
 
 typedef struct {
-  size_t count;
-  float *data;
+    size_t count;
+    float* data;
 } SpzFloatBuffer;
 
 // Forward declaration - full definition is in splat-extensions.h
@@ -46,16 +46,16 @@ typedef struct SpzExtensionNode SpzExtensionNode;
 #endif
 
 typedef struct {
-  int32_t numPoints;
-  int32_t shDegree;
-  bool antialiased;
-  SpzFloatBuffer positions;
-  SpzFloatBuffer scales;
-  SpzFloatBuffer rotations;
-  SpzFloatBuffer alphas;
-  SpzFloatBuffer colors;
-  SpzFloatBuffer sh;
-  SpzExtensionNode* extensions;
+    int32_t numPoints;
+    int32_t shDegree;
+    bool antialiased;
+    SpzFloatBuffer positions;
+    SpzFloatBuffer scales;
+    SpzFloatBuffer rotations;
+    SpzFloatBuffer alphas;
+    SpzFloatBuffer colors;
+    SpzFloatBuffer sh;
+    SpzExtensionNode* extensions;
 } GaussianCloudData;
 
-#endif  // SPZ_SPLAT_C_TYPES_H_
+#endif // SPZ_SPLAT_C_TYPES_H_

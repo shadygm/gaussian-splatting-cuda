@@ -29,25 +29,25 @@ SOFTWARE.
 
 namespace spz {
 
-struct SpzExtensionSafeOrbitCameraAdobe : public SpzExtensionBase {
-  float safeOrbitElevationMin = 0.0f;  // Minimum elevation for safe orbit (radians)
-  float safeOrbitElevationMax = 0.0f;  // Maximum elevation for safe orbit (radians)
-  float safeOrbitRadiusMin = 0.0f;     // Minimum radius for safe orbit
+    struct SpzExtensionSafeOrbitCameraAdobe : public SpzExtensionBase {
+        float safeOrbitElevationMin = 0.0f; // Minimum elevation for safe orbit (radians)
+        float safeOrbitElevationMax = 0.0f; // Maximum elevation for safe orbit (radians)
+        float safeOrbitRadiusMin = 0.0f;    // Minimum radius for safe orbit
 
-  static const std::unordered_set<std::string> kRequiredPlyElementNames;
+        static const std::unordered_set<std::string> kRequiredPlyElementNames;
 
-  SpzExtensionSafeOrbitCameraAdobe();
-  uint32_t payloadBytes() const override;
-  void write(std::ostream& os) const override;
-  SpzExtensionBase* copyAsRawData() const override;
-  std::optional<std::shared_ptr<SpzExtensionBase>> tryReadFromPly(
-      std::istream& in, const std::unordered_set<std::string>& elementNames) const override;
-  void writePlyHeader(std::ostream& out) const override;
-  void writePlyData(std::ostream& out) const override;
-  static std::optional<SpzExtensionBasePtr> read(std::istream& is);
-  static SpzExtensionType type();
-};
+        SpzExtensionSafeOrbitCameraAdobe();
+        uint32_t payloadBytes() const override;
+        void write(std::ostream& os) const override;
+        SpzExtensionBase* copyAsRawData() const override;
+        std::optional<std::shared_ptr<SpzExtensionBase>> tryReadFromPly(
+            std::istream& in, const std::unordered_set<std::string>& elementNames) const override;
+        void writePlyHeader(std::ostream& out) const override;
+        void writePlyData(std::ostream& out) const override;
+        static std::optional<SpzExtensionBasePtr> read(std::istream& is);
+        static SpzExtensionType type();
+    };
 
-}  // namespace spz
+} // namespace spz
 
-#endif  // SPZ_SAFE_ORBIT_CAMERA_ADOBE_H_
+#endif // SPZ_SAFE_ORBIT_CAMERA_ADOBE_H_

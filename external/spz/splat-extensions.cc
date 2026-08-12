@@ -23,152 +23,155 @@ SOFTWARE.
 */
 
 #include "splat-extensions.h"
-#include "safe-orbit-camera-adobe.h"
 #include "coordinate-system-adobe.h"
 #include "load-spz.h"
+#include "safe-orbit-camera-adobe.h"
 
 #include <sstream>
 #include <string>
 #include <unordered_set>
 
 namespace spz {
-namespace {
-template <class T>
-bool readExact(std::istream& is, T& out) {
-  return static_cast<bool>(is.read(reinterpret_cast<char*>(&out), sizeof(T)));
-}
+    namespace {
+        template <class T>
+        bool readExact(std::istream& is, T& out) {
+            return static_cast<bool>(is.read(reinterpret_cast<char*>(&out), sizeof(T)));
+        }
 
-// Extension stream format: [u32 type][u32 byteLength][payload...] per record, until EOF.
-// Unknown types are skipped by advancing byteLength bytes so multiple vendors can coexist.
-// Returns the number of bytes remaining between the current get position and the end of `is`,
-// or -1 if the stream does not support positioning. Restores the original position on success.
-std::streamoff remainingBytes(std::istream& is) {
-  const std::streampos cur = is.tellg();
-  if (cur == std::streampos(-1)) return -1;
-  is.seekg(0, std::ios::end);
-  const std::streampos end = is.tellg();
-  is.seekg(cur);
-  if (end == std::streampos(-1)) return -1;
-  return end - cur;
-}
+        // Extension stream format: [u32 type][u32 byteLength][payload...] per record, until EOF.
+        // Unknown types are skipped by advancing byteLength bytes so multiple vendors can coexist.
+        // Returns the number of bytes remaining between the current get position and the end of `is`,
+        // or -1 if the stream does not support positioning. Restores the original position on success.
+        std::streamoff remainingBytes(std::istream& is) {
+            const std::streampos cur = is.tellg();
+            if (cur == std::streampos(-1))
+                return -1;
+            is.seekg(0, std::ios::end);
+            const std::streampos end = is.tellg();
+            is.seekg(cur);
+            if (end == std::streampos(-1))
+                return -1;
+            return end - cur;
+        }
 
-bool tryParseExtension(std::istream& is, std::vector<SpzExtensionBasePtr>& out) {
-  uint32_t type_u32{};
-  if (!readExact(is, type_u32))
-    return false;  // EOF or short read -> stop
-  uint32_t byteLength{};
-  if (!readExact(is, byteLength))
-    return false;
+        bool tryParseExtension(std::istream& is, std::vector<SpzExtensionBasePtr>& out) {
+            uint32_t type_u32{};
+            if (!readExact(is, type_u32))
+                return false; // EOF or short read -> stop
+            uint32_t byteLength{};
+            if (!readExact(is, byteLength))
+                return false;
 
-  // Bound byteLength against bytes actually remaining in the stream before any allocation,
-  // so a malformed file cannot drive a multi-GB allocation that the subsequent read would reject.
-  const std::streamoff remaining = remainingBytes(is);
-  if (remaining < 0 || static_cast<uint64_t>(byteLength) > static_cast<uint64_t>(remaining)) {
-    SpzLog("[SPZ ERROR] tryParseExtension: byteLength %u exceeds remaining stream bytes",
-           static_cast<unsigned>(byteLength));
-    return false;
-  }
+            // Bound byteLength against bytes actually remaining in the stream before any allocation,
+            // so a malformed file cannot drive a multi-GB allocation that the subsequent read would reject.
+            const std::streamoff remaining = remainingBytes(is);
+            if (remaining < 0 || static_cast<uint64_t>(byteLength) > static_cast<uint64_t>(remaining)) {
+                SpzLog("[SPZ ERROR] tryParseExtension: byteLength %u exceeds remaining stream bytes",
+                       static_cast<unsigned>(byteLength));
+                return false;
+            }
 
-  SpzExtensionType type = static_cast<SpzExtensionType>(type_u32);
+            SpzExtensionType type = static_cast<SpzExtensionType>(type_u32);
 
-  switch (type) {
-    case SpzExtensionType::SPZ_ADOBE_safe_orbit_camera: {
-      std::vector<char> payload(byteLength);
-      if (!is.read(payload.data(), static_cast<std::streamsize>(byteLength)))
-        return false;
-      std::istringstream iss(std::string(payload.data(), payload.size()));
-      auto rec = SpzExtensionSafeOrbitCameraAdobe::read(iss);
-      if (rec)
-        out.push_back(std::move(*rec));
-      return true;  // continue to next record
+            switch (type) {
+            case SpzExtensionType::SPZ_ADOBE_safe_orbit_camera: {
+                std::vector<char> payload(byteLength);
+                if (!is.read(payload.data(), static_cast<std::streamsize>(byteLength)))
+                    return false;
+                std::istringstream iss(std::string(payload.data(), payload.size()));
+                auto rec = SpzExtensionSafeOrbitCameraAdobe::read(iss);
+                if (rec)
+                    out.push_back(std::move(*rec));
+                return true; // continue to next record
+            }
+            case SpzExtensionType::SPZ_ADOBE_coordinate_system: {
+                std::vector<char> payload(byteLength);
+                if (!is.read(payload.data(), static_cast<std::streamsize>(byteLength)))
+                    return false;
+                std::istringstream iss(std::string(payload.data(), payload.size()));
+                auto rec = SpzExtensionCoordinateSystemAdobe::read(iss);
+                if (rec)
+                    out.push_back(std::move(*rec));
+                return true;
+            }
+            default:
+                // Unknown type: skip payload and continue
+                SpzLog("[SPZ WARNING] Unknown extension type 0x%08x (%u bytes) was skipped — loaded data may be incorrect",
+                       static_cast<unsigned>(type_u32), static_cast<unsigned>(byteLength));
+                if (byteLength > 0)
+                    is.ignore(static_cast<std::streamsize>(byteLength));
+                return true;
+            }
+        }
+
+        using PlyExemplarEntry = std::pair<const std::unordered_set<std::string>*, SpzExtensionBasePtr>;
+
+        static const std::vector<PlyExemplarEntry>& getPlyExtensionRegistry() {
+            static const std::vector<PlyExemplarEntry> registry = {
+                {&SpzExtensionSafeOrbitCameraAdobe::kRequiredPlyElementNames, std::make_shared<SpzExtensionSafeOrbitCameraAdobe>()},
+            };
+            return registry;
+        }
+
+        const std::unordered_set<std::string>& getKnownPlyExtensionElementNames() {
+            static const std::unordered_set<std::string> known = []() {
+                std::unordered_set<std::string> out;
+                for (const auto& entry : getPlyExtensionRegistry())
+                    for (const auto& name : *entry.first)
+                        out.insert(name);
+                return out;
+            }();
+            return known;
+        }
+    } // namespace
+
+    CoordinateSystem getPackedCoordinateSystem(
+        const std::vector<SpzExtensionBasePtr>& extensions) {
+        if (auto coordExt = findExtensionByType<SpzExtensionCoordinateSystemAdobe>(extensions))
+            return coordExt->resolve();
+        // Unrecognized extension types are already warned about in tryParseExtension.
+        return CoordinateSystem::RUB; // default: no known extension overrides the packed coordinate system
     }
-    case SpzExtensionType::SPZ_ADOBE_coordinate_system: {
-      std::vector<char> payload(byteLength);
-      if (!is.read(payload.data(), static_cast<std::streamsize>(byteLength)))
-        return false;
-      std::istringstream iss(std::string(payload.data(), payload.size()));
-      auto rec = SpzExtensionCoordinateSystemAdobe::read(iss);
-      if (rec)
-        out.push_back(std::move(*rec));
-      return true;
+
+    bool isKnownPlyExtensionElement(const std::string& elementName) {
+        return getKnownPlyExtensionElementNames().count(elementName) != 0;
     }
-    default:
-      // Unknown type: skip payload and continue
-      SpzLog("[SPZ WARNING] Unknown extension type 0x%08x (%u bytes) was skipped — loaded data may be incorrect",
-             static_cast<unsigned>(type_u32), static_cast<unsigned>(byteLength));
-      if (byteLength > 0)
-        is.ignore(static_cast<std::streamsize>(byteLength));
-      return true;
-  }
-}
 
-using PlyExemplarEntry = std::pair<const std::unordered_set<std::string>*, SpzExtensionBasePtr>;
+    void readAllExtensions(std::istream& is, std::vector<SpzExtensionBasePtr>& out) {
+        while (tryParseExtension(is, out))
+            ;
 
-static const std::vector<PlyExemplarEntry>& getPlyExtensionRegistry() {
-  static const std::vector<PlyExemplarEntry> registry = {
-    {&SpzExtensionSafeOrbitCameraAdobe::kRequiredPlyElementNames, std::make_shared<SpzExtensionSafeOrbitCameraAdobe>()},
-  };
-  return registry;
-}
+        // Stopped because there are no more extension records (EOF). Clear stream state
+        // so the caller does not treat expected end-of-extensions as a read error.
+        if (is.eof()) {
+            is.clear();
+        }
+    }
 
-const std::unordered_set<std::string>& getKnownPlyExtensionElementNames() {
-  static const std::unordered_set<std::string> known = []() {
-    std::unordered_set<std::string> out;
-    for (const auto& entry : getPlyExtensionRegistry())
-      for (const auto& name : *entry.first)
-        out.insert(name);
-    return out;
-  }();
-  return known;
-}
-}  // namespace
+    void writeAllExtensions(const std::vector<SpzExtensionBasePtr>& list, std::ostream& os) {
+        for (const auto& rec : list)
+            rec->write(os);
+    }
 
-CoordinateSystem getPackedCoordinateSystem(
-    const std::vector<SpzExtensionBasePtr>& extensions) {
-  if (auto coordExt = findExtensionByType<SpzExtensionCoordinateSystemAdobe>(extensions))
-    return coordExt->resolve();
-  // Unrecognized extension types are already warned about in tryParseExtension.
-  return CoordinateSystem::RUB;  // default: no known extension overrides the packed coordinate system
-}
+    void readExtensionsFromPly(std::istream& in, const std::vector<spz::PlyExtraElement>& extraElements, std::vector<SpzExtensionBasePtr>& extensions) {
+        std::unordered_set<std::string> elementNames;
+        for (const auto& elem : extraElements)
+            elementNames.insert(elem.name);
 
-bool isKnownPlyExtensionElement(const std::string& elementName) {
-  return getKnownPlyExtensionElementNames().count(elementName) != 0;
-}
+        for (const auto& entry : getPlyExtensionRegistry()) {
+            auto rec = entry.second->tryReadFromPly(in, elementNames);
+            if (rec)
+                extensions.push_back(std::move(*rec));
+        }
+    }
 
-void readAllExtensions(std::istream& is, std::vector<SpzExtensionBasePtr>& out) {
-  while (tryParseExtension(is, out));
+    void writeExtensionsToPlyHeader(const std::vector<SpzExtensionBasePtr>& extensions, std::ostream& out) {
+        for (const auto& ext : extensions)
+            ext->writePlyHeader(out);
+    }
 
-  // Stopped because there are no more extension records (EOF). Clear stream state
-  // so the caller does not treat expected end-of-extensions as a read error.
-  if (is.eof()) {
-    is.clear();
-  }
-}
-
-void writeAllExtensions(const std::vector<SpzExtensionBasePtr>& list, std::ostream& os) {
-  for (const auto& rec : list)
-    rec->write(os);
-}
-
-void readExtensionsFromPly(std::istream& in, const std::vector<spz::PlyExtraElement>& extraElements, std::vector<SpzExtensionBasePtr>& extensions) {
-  std::unordered_set<std::string> elementNames;
-  for (const auto& elem : extraElements)
-    elementNames.insert(elem.name);
-
-  for (const auto& entry : getPlyExtensionRegistry()) {
-    auto rec = entry.second->tryReadFromPly(in, elementNames);
-    if (rec)
-      extensions.push_back(std::move(*rec));
-  }
-}
-
-void writeExtensionsToPlyHeader(const std::vector<SpzExtensionBasePtr>& extensions, std::ostream& out) {
-  for (const auto& ext : extensions)
-    ext->writePlyHeader(out);
-}
-
-void writeExtensionsToPlyData(const std::vector<SpzExtensionBasePtr>& extensions, std::ostream& out) {
-  for (const auto& ext : extensions)
-    ext->writePlyData(out);
-}
-}  // namespace spz
+    void writeExtensionsToPlyData(const std::vector<SpzExtensionBasePtr>& extensions, std::ostream& out) {
+        for (const auto& ext : extensions)
+            ext->writePlyData(out);
+    }
+} // namespace spz
