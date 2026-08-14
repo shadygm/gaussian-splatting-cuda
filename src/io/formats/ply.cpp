@@ -1661,7 +1661,7 @@ namespace lfs::io {
                                                 std::memory_order_relaxed);
                     zero_rotations.fetch_add(local_zero_rotations, std::memory_order_relaxed);
                     repaired_opacity.fetch_add(local_repaired_opacity,
-                                                std::memory_order_relaxed);
+                                               std::memory_order_relaxed);
                 });
         });
 

@@ -112,10 +112,10 @@ namespace {
                              const float rot_w,
                              const float sh0 = 0.0f) {
         append_row(bytes, std::array<float, 14>{
-                             x, 2.0f, 3.0f,
-                             scale, scale, scale, opacity,
-                             rot_w, 0.0f, 0.0f, 0.0f,
-                             sh0, 0.0f, 0.0f});
+                              x, 2.0f, 3.0f,
+                              scale, scale, scale, opacity,
+                              rot_w, 0.0f, 0.0f, 0.0f,
+                              sh0, 0.0f, 0.0f});
     }
 
     std::string gaussian_properties_with_dc() {
