@@ -314,6 +314,10 @@ class SceneNode:
         """Unique node identifier"""
 
     @property
+    def uuid(self) -> str:
+        """Durable node UUID"""
+
+    @property
     def parent_id(self) -> int:
         """Parent node identifier (-1 for root)"""
 
@@ -530,6 +534,9 @@ class Scene:
     def get_node_by_id(self, id: int) -> SceneNode | None:
         """Find a node by its integer ID (None if not found)"""
 
+    def get_node_by_uuid(self, uuid: str) -> SceneNode | None:
+        """Find a node by its durable UUID (None if invalid or not found)"""
+
     def get_node(self, name: str) -> SceneNode | None:
         """Find a node by name (None if not found)"""
 
@@ -703,7 +710,7 @@ class Scene:
         """Notify the renderer that scene data has changed"""
 
     def duplicate_node(self, name: str) -> str:
-        """Duplicate a node by name, returns new node ID"""
+        """Duplicate a node by name, returns the new node name"""
 
     def merge_group(self, group_name: str) -> str:
         """Merge all splats in a group into a single node, returns merged node ID"""

@@ -24,8 +24,6 @@ namespace lfs::mcp {
             std::function<std::expected<void, std::string>(const std::filesystem::path&)>;
         using SavePlyHandler =
             std::function<std::expected<void, std::string>(const std::filesystem::path&, bool include_provenance)>;
-        using SaveCheckpointHandler =
-            std::function<std::expected<std::filesystem::path, std::string>(const std::optional<std::filesystem::path>&)>;
         using StartTrainingHandler =
             std::function<std::expected<void, std::string>()>;
         using RenderCaptureHandler =
@@ -40,7 +38,6 @@ namespace lfs::mcp {
 
         LoadDatasetHandler load_dataset;
         PathHandler load_checkpoint;
-        SaveCheckpointHandler save_checkpoint;
         SavePlyHandler save_ply;
         StartTrainingHandler start_training;
         RenderCaptureHandler render_capture;

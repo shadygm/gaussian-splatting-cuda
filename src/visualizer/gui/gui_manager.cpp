@@ -3071,7 +3071,7 @@ namespace lfs::vis::gui {
             } else {
                 return;
             }
-            ls.save();
+            ls.saveUserPreferences();
         };
 
         enqueueModal(std::move(req));
@@ -3079,6 +3079,44 @@ namespace lfs::vis::gui {
     }
 
     GuiManager::~GuiManager() = default;
+
+    std::string GuiManager::scenePanelActiveTab() const {
+        return native_scene_panel_
+                   ? native_scene_panel_->projectActiveTab()
+                   : "scene";
+    }
+
+    void GuiManager::setScenePanelActiveTab(
+        const std::string_view tab) {
+        if (native_scene_panel_)
+            native_scene_panel_->setProjectActiveTab(tab);
+    }
+
+    SceneTreeSessionChrome GuiManager::captureSceneTreeChrome(
+        const lfs::core::Scene& scene) const {
+        return native_scene_panel_
+                   ? native_scene_panel_->captureTreeChrome(scene)
+                   : SceneTreeSessionChrome{};
+    }
+
+    void GuiManager::applySceneTreeChrome(
+        const SceneTreeSessionChrome& chrome) {
+        if (native_scene_panel_)
+            native_scene_panel_->applyTreeChrome(chrome);
+    }
+
+    void GuiManager::resetSceneTreeChrome() {
+        if (native_scene_panel_)
+            native_scene_panel_->resetTreeChrome();
+    }
+
+    float GuiManager::tabStripScroll() const {
+        return rml_right_panel_.tabStripScroll();
+    }
+
+    void GuiManager::setTabStripScroll(const float value) {
+        rml_right_panel_.setTabStripScroll(value);
+    }
 
     void GuiManager::initCustomCursors() {
         if (!pipette_cursor_) {
@@ -3762,8 +3800,6 @@ namespace lfs::vis::gui {
         if (dev_resource_watch_.scan_future.valid())
             dev_resource_watch_.scan_future.wait();
 
-        panel_layout_.saveState();
-
         if (video_widget_)
             video_widget_->shutdown();
 
@@ -3843,8 +3879,10 @@ namespace lfs::vis::gui {
 
         // Floating panels (self-managed windows)
         {
-            auto panel = std::static_pointer_cast<IPanel>(
-                std::make_shared<NativeScenePanel>(&rmlui_manager_));
+            native_scene_panel_ =
+                std::make_shared<NativeScenePanel>(&rmlui_manager_);
+            auto panel =
+                std::static_pointer_cast<IPanel>(native_scene_panel_);
             native_panel_storage_.push_back(panel);
             reg_panel("lfs.scene", "Scene", panel, PanelSpace::SceneHeader, 0);
         }
@@ -3852,9 +3890,8 @@ namespace lfs::vis::gui {
         reg_panel("native.video_extractor", "Video Extractor",
                   make_panel(VideoExtractorPanel(video_widget_.get())),
                   PanelSpace::Floating, 11,
-                  0,
+                  static_cast<uint32_t>(PanelOption::DEFAULT_CLOSED),
                   1082.0f, 920.0f);
-        reg.set_panel_enabled("native.video_extractor", false);
 
         // Viewport overlays (ordered by draw priority)
         reg_panel("native.selection_overlay", "Selection Overlay",
@@ -6298,7 +6335,7 @@ namespace lfs::vis::gui {
             state.load();
             state.perf_hud_visible = show_vram_hud_;
             state.perf_hud_expanded = perf_hud_expanded_;
-            state.save();
+            state.saveUserPreferences();
         });
 
         ui::TogglePerfHudExpanded::when([this](const auto&) {
@@ -6307,7 +6344,7 @@ namespace lfs::vis::gui {
             state.load();
             state.perf_hud_visible = show_vram_hud_;
             state.perf_hud_expanded = perf_hud_expanded_;
-            state.save();
+            state.saveUserPreferences();
         });
 
         ui::OpenPerfHudLedger::when([this](const auto&) {
@@ -6317,7 +6354,7 @@ namespace lfs::vis::gui {
             state.perf_hud_visible = show_vram_hud_;
             state.perf_hud_expanded = true;
             state.vram_hud_active_tab = "ledger";
-            state.save();
+            state.saveUserPreferences();
         });
 
         ui::ToggleFullscreen::when([this](const auto&) {
@@ -6356,9 +6393,7 @@ namespace lfs::vis::gui {
                 return std::format("{} bytes", bytes);
             };
 
-            const std::string subtitle = e.is_checkpoint
-                                             ? std::format("{} {})", LOC(DiskSpaceDialog::CHECKPOINT_SAVE_FAILED), e.iteration)
-                                             : std::string(LOC(DiskSpaceDialog::EXPORT_FAILED));
+            const std::string subtitle = LOC(DiskSpaceDialog::EXPORT_FAILED);
 
             std::string body;
             body += std::format("<div>{}</div>", LOC(DiskSpaceDialog::INSUFFICIENT_SPACE_PREFIX));
@@ -6384,54 +6419,22 @@ namespace lfs::vis::gui {
                 {LOC(DiskSpaceDialog::RETRY), "primary"}};
 
             auto path = e.path;
-            auto iteration = e.iteration;
-            auto is_checkpoint = e.is_checkpoint;
 
-            req.on_result = [this, path, iteration, is_checkpoint](const lfs::core::ModalResult& result) {
+            req.on_result = [path](const lfs::core::ModalResult& result) {
                 if (result.button_label == LOC(DiskSpaceDialog::RETRY)) {
-                    if (is_checkpoint) {
-                        if (auto* tm = viewer_->getTrainerManager()) {
-                            if (tm->isFinished() || !tm->isTrainingActive()) {
-                                if (auto* trainer = tm->getTrainer()) {
-                                    LOG_INFO("Retrying save at iteration {}", iteration);
-                                    trainer->save_final_ply_and_checkpoint(iteration);
-                                }
-                            } else {
-                                tm->requestSaveCheckpoint();
-                            }
-                        }
-                    }
+                    LOG_INFO("Export disk-space failure: re-export manually from File > Export");
                 } else if (result.button_label == LOC(DiskSpaceDialog::CHANGE_LOCATION)) {
                     std::filesystem::path new_location = PickFolderDialog(path.parent_path());
-                    if (!new_location.empty() && is_checkpoint) {
-                        if (auto* tm = viewer_->getTrainerManager()) {
-                            if (auto* trainer = tm->getTrainer()) {
-                                auto params = trainer->getParams();
-                                params.dataset.output_path = new_location;
-                                trainer->setParams(params);
-                                LOG_INFO("Output path changed to: {}", lfs::core::path_to_utf8(new_location));
-                                if (tm->isFinished() || !tm->isTrainingActive())
-                                    trainer->save_final_ply_and_checkpoint(iteration);
-                                else
-                                    tm->requestSaveCheckpoint();
-                            }
-                        }
-                    } else if (!new_location.empty()) {
+                    if (!new_location.empty()) {
                         LOG_INFO("Re-export manually using File > Export to: {}",
                                  lfs::core::path_to_utf8(new_location));
                     }
                 } else {
-                    if (is_checkpoint)
-                        LOG_WARN("Checkpoint save cancelled by user");
-                    else
-                        LOG_INFO("Export cancelled by user");
+                    LOG_INFO("Export cancelled by user");
                 }
             };
-            req.on_cancel = [is_checkpoint]() {
-                if (is_checkpoint)
-                    LOG_WARN("Checkpoint save cancelled by user");
-                else
-                    LOG_INFO("Export cancelled by user");
+            req.on_cancel = []() {
+                LOG_INFO("Export cancelled by user");
             };
 
             enqueueModal(std::move(req));
@@ -6808,13 +6811,40 @@ namespace lfs::vis::gui {
         startup_overlay_.setPluginLoadState(started, active, progress, stage);
     }
 
-    void GuiManager::requestExitConfirmation() {
+    void GuiManager::requestExitConfirmation(
+        const bool training_in_progress) {
+        exit_confirmation_requested_ = true;
+        exit_confirmation_dismissed_ = false;
+        lfs::python::set_exit_popup_open(true);
         startup_overlay_.dismiss();
-        lfs::core::events::cmd::RequestExit{}.emit();
+        lfs::core::events::cmd::
+            ShowExitConfirmation{
+                .training_in_progress =
+                    training_in_progress}
+                .emit();
+        const bool overlay_live =
+            rml_modal_overlay_ &&
+            (rml_modal_overlay_->isOpen() ||
+             rml_modal_overlay_->hasPendingRequest());
+        if (!overlay_live) {
+            dismissExitConfirmation();
+        }
+    }
+
+    void GuiManager::dismissExitConfirmation() {
+        exit_confirmation_dismissed_ = true;
+        lfs::python::set_exit_popup_open(false);
+    }
+
+    void GuiManager::noteExitPopupMirror(const bool open) {
+        if (!open) {
+            exit_confirmation_dismissed_ = true;
+        }
     }
 
     bool GuiManager::isExitConfirmationPending() const {
-        return lfs::python::is_exit_popup_open();
+        return exit_confirmation_requested_ &&
+               !exit_confirmation_dismissed_;
     }
 
 } // namespace lfs::vis::gui

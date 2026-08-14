@@ -63,6 +63,7 @@ set(CORE_SOURCES
         failure_report.cpp
         cuda/memory_arena_owner.cpp
         memory_pressure.cpp
+        memory_domain.cpp
         operator_callbacks.cpp
         animatable_property.cpp
         argument_parser.cpp
@@ -79,6 +80,7 @@ set(CORE_SOURCES
         reactive_store.cpp
         scene.cpp
         session_breadcrumb.cpp
+        uuid.cpp
         splat_simplify.cpp
         bhatt_lod.cpp
         octree_lod.cpp
@@ -103,6 +105,7 @@ target_include_directories(lfs_core
         ${CUDAToolkit_INCLUDE_DIRS}
     PRIVATE
         ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/io/include
         ${CMAKE_CURRENT_SOURCE_DIR}/tensor  # For internal/ headers
 )
 target_include_directories(lfs_core SYSTEM PRIVATE
@@ -142,6 +145,10 @@ endif()
 # Platform-specific settings
 if(UNIX)
     target_link_libraries(lfs_core PUBLIC dl)
+endif()
+
+if(WIN32)
+    target_link_libraries(lfs_core PRIVATE bcrypt)
 endif()
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 12)

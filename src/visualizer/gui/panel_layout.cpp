@@ -9,6 +9,7 @@
 #include "python/python_runtime.hpp"
 #include "visualizer_impl.hpp"
 #include <algorithm>
+#include <cmath>
 
 namespace lfs::vis::gui {
     namespace {
@@ -30,26 +31,51 @@ namespace lfs::vis::gui {
     PanelLayoutManager::PanelLayoutManager() = default;
 
     void PanelLayoutManager::loadState() {
+        // Legacy layout.json remains an import-only first-run reader. Project
+        // panel geometry is authoritative in GUIL (right_panel_width,
+        // scene_panel_ratio, python_console_width, bottom_dock_height,
+        // left_dock_width, sequencer visibility). Do not seed those from
+        // layout.json so a later GUIL restore cannot fight stale user prefs.
         LayoutState state;
         state.load();
-        // right_panel_width_ intentionally not loaded — always start at default
-        scene_panel_ratio_ = state.scene_panel_ratio;
-        python_console_width_ = state.python_console_width;
-        bottom_dock_height_ = state.bottom_dock_height;
-        left_dock_width_ = state.left_dock_width;
         show_sequencer_ = false;
     }
 
-    void PanelLayoutManager::saveState() const {
-        LayoutState state;
-        state.load();
-        // right_panel_width not saved — always start at default
-        state.scene_panel_ratio = scene_panel_ratio_;
-        state.python_console_width = python_console_width_;
-        state.bottom_dock_height = bottom_dock_height_;
-        state.left_dock_width = left_dock_width_;
-        state.show_sequencer = show_sequencer_;
-        state.save();
+    PanelLayoutProjectState
+    PanelLayoutManager::captureProjectState() const {
+        return {
+            .right_panel_width = right_panel_width_,
+            .scene_panel_ratio = scene_panel_ratio_,
+            .python_console_width = python_console_width_,
+            .bottom_dock_height = bottom_dock_height_,
+            .left_dock_width = left_dock_width_,
+            .show_sequencer = show_sequencer_,
+            .active_tab_id = active_tab_id_,
+            .tab_scroll_offset = tab_scroll_offset_,
+        };
+    }
+
+    void PanelLayoutManager::applyProjectState(
+        const PanelLayoutProjectState& state) {
+        if (std::isfinite(state.right_panel_width) &&
+            state.right_panel_width > 0.0f)
+            right_panel_width_ = state.right_panel_width;
+        if (std::isfinite(state.scene_panel_ratio))
+            scene_panel_ratio_ =
+                std::clamp(state.scene_panel_ratio, 0.01f, 0.99f);
+        if (std::isfinite(state.python_console_width))
+            python_console_width_ = state.python_console_width;
+        if (std::isfinite(state.bottom_dock_height) &&
+            state.bottom_dock_height > 0.0f)
+            bottom_dock_height_ = state.bottom_dock_height;
+        if (std::isfinite(state.left_dock_width) &&
+            state.left_dock_width > 0.0f)
+            left_dock_width_ = state.left_dock_width;
+        show_sequencer_ = state.show_sequencer;
+        active_tab_id_ = state.active_tab_id;
+        tab_scroll_offset_ = std::isfinite(state.tab_scroll_offset)
+                                 ? std::max(0.0f, state.tab_scroll_offset)
+                                 : 0.0f;
     }
 
     bool PanelLayoutManager::syncActiveTab(const std::vector<PanelSummary>& main_tabs,

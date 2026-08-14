@@ -58,6 +58,7 @@ namespace lfs::vis {
 
             [[nodiscard]] SequencerController& controller() { return controller_; }
             [[nodiscard]] const SequencerController& controller() const { return controller_; }
+            void syncKeyframesToSceneGraph() { scene_sync_->syncToSceneGraph(); }
             void setFloating(bool floating);
             [[nodiscard]] bool blocksPointer(double x, double y) const;
             [[nodiscard]] bool blocksKeyboard() const;
@@ -66,6 +67,9 @@ namespace lfs::vis {
             // Serialized status of the active PLY sequence (empty when inactive).
             // Used by MCP tooling to verify playback/scrub behaviour.
             [[nodiscard]] LFS_VIS_API std::string plyPlayerStatusJson() const;
+            [[nodiscard]] float timelineZoom() const;
+            [[nodiscard]] float timelinePan() const;
+            void setTimelineView(float zoom, float pan);
 
         private:
             void renderSequencerPanel(const UIContext& ctx, const ViewportLayout& viewport,

@@ -119,9 +119,6 @@ namespace lfs::core {
         if (from == to) {
             return;
         }
-        // Null stream is the default stream — wait/record still valid, but a
-        // destroyed user stream handle can crash in the driver. Detect
-        // capture status first; any query failure means the stream is unusable.
         if (from != nullptr) {
             if (is_stream_retired(from)) {
                 // release_stream synchronized the stream before retiring it, so

@@ -9,10 +9,12 @@
 #include "core/parameters.hpp"
 #include "core/path_utils.hpp"
 #include "core/property_registry.hpp"
+#include "io/project_path.hpp"
 #include <algorithm>
 #include <any>
 #include <args.hxx>
 #include <array>
+#include <cctype>
 #include <charconv>
 #include <cmath>
 #include <cstdlib>
@@ -302,6 +304,9 @@ namespace {
                 "\n"
                 "EXAMPLES:\n"
                 "lichtfeld-studio -d ./data -o ./output\n"
+                "lichtfeld-studio -v session.licht\n"
+                "lichtfeld-studio --headless --resume session.licht\n"
+                "lichtfeld-studio -d ./data -o ./output --save-project-at-iter 7000\n"
                 "lichtfeld-studio --resume checkpoint.resume\n"
                 "lichtfeld-studio --render-camera-path path.json --render-load model.ply --render-output out.mp4\n"
                 "lichtfeld-studio -v model.ply\n"
@@ -320,8 +325,8 @@ namespace {
             ::args::Group mode_group(parser, "MODE SELECTION:");
             ::args::HelpFlag help(mode_group, "help", "Display help menu", {'h', "help"});
             ::args::Flag version(mode_group, "version", "Display version information", {'V', "version"});
-            ::args::ValueFlag<std::string> view_ply(mode_group, "path", "View file(s). Supports splat (.ply, .sog, .spz, .rad, .usd, .usda, .usdc, .usdz) and mesh (.obj, .fbx, .gltf, .glb, .stl) formats. If directory, loads all.", {'v', "view"});
-            ::args::ValueFlag<std::string> resume_checkpoint(mode_group, "checkpoint", "Resume training from checkpoint file", {"resume"});
+            ::args::ValueFlag<std::string> view_ply(mode_group, "path", "View file(s). Supports projects (.licht), splat (.ply, .sog, .spz, .rad, .usd, .usda, .usdc, .usdz) and mesh (.obj, .fbx, .gltf, .glb, .stl) formats. If directory, loads all.", {'v', "view"});
+            ::args::ValueFlag<std::string> resume_checkpoint(mode_group, "checkpoint", "Resume training from a .resume checkpoint or .licht project", {"resume"});
             ::args::ValueFlag<std::string> render_camera_path(mode_group, "path", "Render a JSON camera-keyframe path to video, headless (no GUI/window). Requires --render-load and --render-output; see RENDER PATH options.", {"render-camera-path"});
             ::args::CompletionFlag completion(parser, {"complete"});
 
@@ -471,6 +476,14 @@ namespace {
             ::args::Flag no_save_eval_images(output_group, "no_save_eval_images", "Disable saving of evaluation comparison images (GT vs rendered) during eval (default: enabled)", {"no-save-eval-images"});
             ::args::ValueFlagList<std::string> timelapse_images(output_group, "timelapse_images", "Image filenames to render timelapse images for", {"timelapse-images"});
             ::args::ValueFlag<int> timelapse_every(output_group, "timelapse_every", "Render timelapse image every N iterations (default: 50)", {"timelapse-every"});
+            ::args::ValueFlag<uint32_t> save_project_at_iteration(
+                output_group, "iteration",
+                "Save a .licht project through the training snapshot service at this iteration",
+                {"save-project-at-iter"});
+            ::args::ValueFlag<std::string> save_project_path(
+                output_group, "path",
+                "Destination for --save-project-at-iter (default: <output>/project.licht)",
+                {"save-project-path"});
 
             // =============================================================================
             // UI OPTIONS
@@ -643,11 +656,28 @@ namespace {
                         }
                         LOG_DEBUG("Found {} view files in directory", params.view_paths.size());
                     } else {
-                        if (!is_supported(view_path)) {
+                        auto extension = view_path.extension().string();
+                        std::ranges::transform(
+                            extension, extension.begin(),
+                            [](const unsigned char character) {
+                                return static_cast<char>(
+                                    std::tolower(character));
+                            });
+                        if (extension == ".licht") {
+                            if (!lfs::io::project::isPublishedLichtPath(
+                                    view_path)) {
+                                return std::unexpected(
+                                    lfs::io::project::
+                                        unpublishedLichtUserMessage(
+                                            view_path));
+                            }
+                            params.project_path = view_path;
+                        } else if (!is_supported(view_path)) {
                             return std::unexpected(std::format(
                                 "Unsupported file format: {}", lfs::core::path_to_utf8(view_path)));
+                        } else {
+                            params.view_paths.push_back(view_path);
                         }
-                        params.view_paths.push_back(view_path);
                     }
                 }
 
@@ -723,10 +753,27 @@ namespace {
                     if (!std::filesystem::exists(ckpt_path)) {
                         return std::unexpected(std::format("Checkpoint file does not exist: {}", ckpt_path_str));
                     }
-                    params.resume_checkpoint = ckpt_path;
+                    auto extension = ckpt_path.extension().string();
+                    std::ranges::transform(
+                        extension, extension.begin(),
+                        [](const unsigned char character) {
+                            return static_cast<char>(
+                                std::tolower(character));
+                        });
+                    if (extension == ".licht") {
+                        if (!lfs::io::project::isPublishedLichtPath(
+                                ckpt_path)) {
+                            return std::unexpected(
+                                lfs::io::project::
+                                    unpublishedLichtUserMessage(
+                                        ckpt_path));
+                        }
+                        params.resume_project = ckpt_path;
+                    } else {
+                        params.resume_checkpoint = ckpt_path;
+                    }
                 }
             }
-
             if (init_path) {
                 const auto path_str = ::args::get(init_path);
                 params.init_path = path_str;
@@ -759,12 +806,16 @@ namespace {
             // Training mode
             const bool has_data_path = data_path && !::args::get(data_path).empty();
             const bool has_output_path = output_path && !::args::get(output_path).empty();
-            const bool has_resume = params.resume_checkpoint.has_value();
+            const bool has_resume =
+                params.resume_checkpoint.has_value() ||
+                params.resume_project.has_value();
 
-            // If headless mode, require data path or resume checkpoint
+            // If headless mode, require data path or resume
+            // (--resume accepts both .resume checkpoints and .licht projects).
             if (headless && !has_data_path && !has_resume) {
                 return std::unexpected(std::format(
-                    "ERROR: Headless mode requires --data-path or --resume\n\n{}",
+                    "ERROR: Headless mode requires --data-path or --resume "
+                    "(--resume file.licht counts as a project source)\n\n{}",
                     parser.Help()));
             }
 
@@ -997,6 +1048,14 @@ namespace {
                                         no_edge_map_flag = bool(no_edge_map),
                                         freeze_lr_scale_val = cli_option_present({"--freeze-lr-scale"}) ? std::optional<float>(::args::get(freeze_lr_scale)) : std::optional<float>(),
                                         exclude_export_flag = bool(exclude_export),
+                                        save_project_at_iteration_val =
+                                            cli_option_present({"--save-project-at-iter"})
+                                                ? std::optional<uint32_t>(::args::get(save_project_at_iteration))
+                                                : std::optional<uint32_t>(),
+                                        save_project_path_val =
+                                            cli_option_present({"--save-project-path"})
+                                                ? std::optional<std::string>(::args::get(save_project_path))
+                                                : std::optional<std::string>(),
                                         output_name_val = cli_option_present({"--output-name"}) ? std::optional<std::string>(::args::get(output_name)) : std::optional<std::string>()]() {
                 auto& opt = params.optimization;
                 auto& svs = params.server;
@@ -1015,6 +1074,8 @@ namespace {
 
                 // Apply all overrides
                 setVal(iterations_val, opt.iterations);
+                params.cli_iterations_set =
+                    iterations_val.has_value();
                 setVal(resize_factor_val, ds.resize_factor);
                 setVal(max_width_val, ds.max_width);
                 setVal(min_track_length_val, ds.min_track_length);
@@ -1039,6 +1100,14 @@ namespace {
                 setVal(timelapse_images_val, ds.timelapse_images);
                 setVal(timelapse_every_val, ds.timelapse_every);
                 setVal(output_name_val, ds.output_name);
+                if (save_project_at_iteration_val) {
+                    params.save_project_at_iteration =
+                        static_cast<size_t>(*save_project_at_iteration_val);
+                }
+                if (save_project_path_val) {
+                    params.save_project_path =
+                        lfs::core::utf8_to_path(*save_project_path_val);
+                }
 
                 // Sparsity parameters
                 setVal(sparsify_steps_val, opt.sparsify_steps);

@@ -23,6 +23,7 @@
 #include <sstream>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace lfs::core {
@@ -678,7 +679,7 @@ namespace lfs::core {
                 // Skip null / home-equal extras. Bridging a destroyed capture stream
                 // can SIGSEGV inside the driver — callers should rehome first,
                 // but free must stay best-effort.
-                if (extra == nullptr || extra == info.home_stream)
+                if (extra == nullptr || extra == info.home_stream || is_stream_retired(extra))
                     continue;
                 bridgeStreams(extra, info.home_stream);
             }
@@ -818,7 +819,7 @@ namespace lfs::core {
 #endif
 
         std::unordered_map<void*, AllocationInfo> allocation_map_;
-        std::mutex map_mutex_;
+        mutable std::mutex map_mutex_;
         std::shared_mutex stream_routing_mutex_;
         std::atomic<size_t> direct_alloc_count_{0};
         bool slab_enabled_{false};

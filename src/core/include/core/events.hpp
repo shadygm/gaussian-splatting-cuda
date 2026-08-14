@@ -5,6 +5,7 @@
 #pragma once
 #include "core/error_envelope.hpp"
 #include "core/event_bridge/event_bridge.hpp"
+#include "core/uuid.hpp"
 #include "geometry/bounding_box.hpp"
 #include <cstdint>
 #include <filesystem>
@@ -57,7 +58,6 @@ namespace lfs::core {
             EVENT(ResumeTraining, );
             EVENT(StopTraining, );
             EVENT(ResetTraining, );
-            EVENT(SaveCheckpoint, std::optional<int> iteration;);
             EVENT(LoadFile, std::filesystem::path path; bool is_dataset; std::filesystem::path output_path = {}; std::filesystem::path init_path = {}; std::string centralize_dataset = {}; std::optional<int> max_width = {}; std::optional<int> min_track_length = {}; bool apply_auto_crop = false;);
             EVENT(LoadCheckpointForTraining, std::filesystem::path checkpoint_path; std::filesystem::path dataset_path; std::filesystem::path output_path;);
             EVENT(ImportColmapCameras, std::filesystem::path sparse_path;);
@@ -65,8 +65,22 @@ namespace lfs::core {
             EVENT(ShowDatasetLoadPopup, std::filesystem::path dataset_path;);
             EVENT(ShowVideoExtractor, std::filesystem::path video_path;);
             EVENT(ShowResumeCheckpointPopup, std::filesystem::path checkpoint_path;);
-            EVENT(NewProject, );
+            EVENT(NewProject, bool discard_changes = false;);
+            EVENT(ProjectSave, );
+            EVENT(ProjectSaveAs, std::filesystem::path path;);
+            EVENT(ProjectOpen, std::filesystem::path path; bool discard_changes = false;);
+            EVENT(ProjectCompact, );
+            EVENT(ShowProjectSwitchConfirmation, bool new_project = false; std::filesystem::path path;);
+            EVENT(SetReopenLastProject, bool enabled;);
+            EVENT(SetAutoSaveOnClose, bool enabled;);
+            EVENT(SetProjectAutosaveInterval, std::uint64_t seconds;);
             EVENT(RequestExit, );
+            EVENT(ShowExitConfirmation,
+                  bool training_in_progress = false;);
+            EVENT(SaveAndExit, );
+            EVENT(SaveAsAndExit, );
+            EVENT(StopSaveAndExit, );
+            EVENT(CancelExit, );
             EVENT(ForceExit, );
             EVENT(SwitchToEditMode, );
             EVENT(ResetCamera, );
@@ -82,8 +96,6 @@ namespace lfs::core {
             EVENT(RemoveNodeById, int32_t node_id; bool keep_children = false;);
             EVENT(RenameNodeById, int32_t node_id; std::string new_name;);
             EVENT(SetNodeVisibilityById, int32_t node_id; bool visible;);
-            EVENT(ExportNodeAs, std::string name; ExportFormat format;);
-            EVENT(ExportAllMergedAs, ExportFormat format;);
             EVENT(ReparentNode, std::string node_name; std::string new_parent_name;);    // Empty parent = root
             EVENT(ReparentNodeById, int32_t node_id; int32_t new_parent_id;);            // -1 parent = root
             EVENT(MoveNodeById, int32_t node_id; int32_t new_parent_id; int32_t index;); // -1 parent = root, -1 index = append
@@ -159,7 +171,7 @@ namespace lfs::core {
             EVENT(SetSelectionSubMode, int selection_mode;);
             EVENT(ExecuteMirror, int axis;); // 0=X, 1=Y, 2=Z
             EVENT(CancelActiveOperator, );   // Cancel and revert current operator
-        } // namespace tools
+        }                                    // namespace tools
 
         // ============================================================================
         // State - Notifications about what has happened (broadcasts)
@@ -185,8 +197,8 @@ namespace lfs::core {
             EVENT(SceneChanged, uint32_t mutation_flags = 0;);
             EVENT(SelectionChanged, bool has_selection; int count;);
             // node_type stores core::NodeType as int.
-            EVENT(PLYAdded, std::string name; size_t node_gaussians; size_t total_gaussians; bool is_visible; std::string parent_name; bool is_group; int node_type; bool from_history = false;);
-            EVENT(PLYRemoved, std::string name; bool children_kept = false; std::string parent_of_removed; bool from_history = false;);
+            EVENT(PLYAdded, std::string name; Uuid uuid; size_t node_gaussians; size_t total_gaussians; bool is_visible; std::string parent_name; bool is_group; int node_type; bool from_history = false;);
+            EVENT(PLYRemoved, std::string name; Uuid uuid; bool children_kept = false; std::string parent_of_removed; bool from_history = false;);
             EVENT(NodeReparented, std::string name; std::string old_parent; std::string new_parent; bool from_history = false;);
 
             // Data loading
@@ -221,7 +233,6 @@ namespace lfs::core {
                   size_t output_chars;
                   bool success;
                   bool interrupted;);
-            EVENT(CheckpointSaved, int iteration; std::filesystem::path path;);
             EVENT(ExportCompleted, std::filesystem::path path; ExportFormat format;);
             EVENT(DiskSpaceSaveFailed,
                   int iteration;
@@ -229,8 +240,7 @@ namespace lfs::core {
                   std::string error;
                   size_t required_bytes;
                   size_t available_bytes;
-                  bool is_disk_space_error;
-                  bool is_checkpoint = true;);
+                  bool is_disk_space_error;);
             EVENT(MemoryUsage,
                   size_t gpu_used;
                   size_t gpu_total;
@@ -311,11 +321,14 @@ namespace lfs::core {
         namespace internal {
             EVENT(TrainerReady, );
             EVENT(TrainingReadyToStart, );
+            // Startup plugin registration is terminal. Project GUIL state
+            // must not touch PanelRegistry before this concrete boundary.
+            EVENT(GuiPanelsReady, std::uint64_t registration_revision;);
             EVENT(WindowFocusLost, );
             EVENT(DisplayScaleChanged, float scale;);
             EVENT(UiScaleChangeRequested, float scale;); // 0 = auto (from OS)
-        } // namespace internal
-    } // namespace events
+        }                                                // namespace internal
+    }                                                    // namespace events
 
     // ============================================================================
     // Convenience functions

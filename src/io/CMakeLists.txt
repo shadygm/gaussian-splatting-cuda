@@ -251,6 +251,25 @@ add_library(lfs_io STATIC
         stb_image_impl.cpp
         tinyply.cpp
 
+        # Retained-DOM JSON chapter foundation
+        json_chapter_dom.cpp
+
+        # .licht project container
+        project/crc32c.hpp
+        project/crc32c.cpp
+        project/project_container_internal.hpp
+        project/project_file.cpp
+        project/project_container.cpp
+        project/project_writer.cpp
+        project/project_chapters.cpp
+        project/session_chapters.cpp
+        project/project_document.cpp
+        project/project_recovery.cpp
+        project/splat_chapter.cpp
+        project/scene_chapter_adapter.cpp
+        project/geometry_payload.cpp
+        project/selection_chapter.cpp
+
 )
 
 # Set include directories
@@ -318,6 +337,8 @@ target_link_libraries(lfs_io
         ${ARCHIVE_LIB}         # LibArchive for SOG bundle support
         ZLIB::ZLIB             # gzip/msgpack payloads inside NuRec USDZ
         $<IF:$<TARGET_EXISTS:libdeflate::libdeflate_shared>,libdeflate::libdeflate_shared,libdeflate::libdeflate_static> # fast DEFLATE for RAD
+        zstd::libzstd          # .licht project container chunk compression
+        xxHash::xxhash         # REFS fingerprints and embedded-payload provenance
         CUDA::cudart           # CUDA runtime for nvImageCodec
         lfs_io_cuda            # IO-specific CUDA kernels (morton, k-means)
         lfs_io_rad_quant_cuda  # RAD encode quantization (bit-exact, no fast math)

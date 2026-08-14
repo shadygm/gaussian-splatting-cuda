@@ -1,8 +1,27 @@
 # SPDX-FileCopyrightText: 2025 LichtFeld Studio Authors
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Built-in plugin panel registration."""
+"""Built-in plugin panel registration and per-panel GUIL chrome hooks."""
+
+from __future__ import annotations
 
 import traceback
+
+
+def capture_panel_chrome(panel):
+    """Return a JSON-serializable dict from ``panel.capture_chrome()``, or None."""
+    hook = getattr(panel, "capture_chrome", None)
+    if hook is None:
+        return None
+    payload = hook()
+    return payload if isinstance(payload, dict) else None
+
+
+def apply_panel_chrome(panel, payload):
+    """Deliver a payload (dict or None) to ``panel.apply_chrome()`` if present."""
+    hook = getattr(panel, "apply_chrome", None)
+    if hook is None:
+        return
+    hook(payload if isinstance(payload, dict) else {})
 
 
 def __getattr__(name):
@@ -105,6 +124,12 @@ def _build_builtin_panel_steps(lf):
         lf.register_class(GettingStartedPanel)
         lf.ui.set_panel_enabled("lfs.getting_started", False)
 
+    def startup_recent_panel():
+        from .startup_recent_panel import StartupRecentPanel
+
+        lf.register_class(StartupRecentPanel)
+        lf.ui.set_panel_enabled("lfs.startup_recent", False)
+
     def image_preview_panel():
         from .image_preview_panel import ImagePreviewPanel, open_camera_preview_by_uid
 
@@ -170,6 +195,7 @@ def _build_builtin_panel_steps(lf):
         ("bug_report_panel", bug_report_panel),
         ("portal_account", portal_account),
         ("getting_started_panel", getting_started_panel),
+        ("startup_recent_panel", startup_recent_panel),
         ("image_preview_panel", image_preview_panel),
         ("histogram_panel", histogram_panel),
         ("scripts_panel", scripts_panel),
