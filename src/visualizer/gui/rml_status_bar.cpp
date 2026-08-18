@@ -102,7 +102,8 @@ namespace lfs::vis::gui {
                                          const std::string& value) noexcept {
             try {
                 return std::vformat(pattern, std::make_format_args(value));
-            } catch (const std::format_error&) {
+            } catch (...) {
+                // LFS-CENSUS-OK(empty-catch): render-loop translation fallback returns the untranslated pattern; logging here would spam every frame.
                 return pattern;
             }
         }
@@ -759,7 +760,9 @@ namespace lfs::vis::gui {
             el->AddEventListener(Rml::EventId::Click, mcp_preferences_listener_);
 
         if (!mcp_power_listener_) {
-            mcp_power_listener_ = new CallbackListener([] {
+            mcp_power_listener_ = new CallbackListener([this] {
+                if (model_.safe_mode)
+                    return;
                 lfs::vis::toggleMcpRuntimeEnabled();
             });
         }
@@ -1560,7 +1563,7 @@ namespace lfs::vis::gui {
             return;
         }
 
-        trackRenderedContextFrame(x, y);
+        trackRenderedContextFrame(x, y, overlay_height);
 
         queueCachedVulkanContext(x, y - overlay_height, w_px, h_px + overlay_height,
                                  screen_w, screen_h,
@@ -1613,7 +1616,7 @@ namespace lfs::vis::gui {
             last_render_h_ = render_h;
         }
 
-        trackRenderedContextFrame(x, y);
+        trackRenderedContextFrame(x, y, overlay_height);
 
         queueCachedVulkanContext(x, y - overlay_height, w_px, h_px + overlay_height,
                                  screen_w, screen_h,
