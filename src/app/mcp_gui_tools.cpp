@@ -44,6 +44,7 @@
 #include "visualizer/operation/undo_history.hpp"
 #include "visualizer/operator/operator_properties.hpp"
 #include "visualizer/rendering/rendering_manager.hpp"
+#include "visualizer/rendering/scene_upscaler_registry.hpp"
 #include "visualizer/scene/scene_manager.hpp"
 #include "visualizer/scene_coordinate_utils.hpp"
 #include "visualizer/visualizer.hpp"
@@ -2865,6 +2866,20 @@ namespace lfs::app {
                 });
             });
 
+        json scene_upscaler_backend_enum = json::array();
+        json scene_upscaler_preset_enum = json::array();
+        for (const auto& descriptor : vis::sceneUpscalerDescriptors()) {
+            scene_upscaler_backend_enum.push_back(std::string(descriptor.id));
+            for (const auto& preset : descriptor.presets) {
+                const std::string preset_id(preset.id);
+                if (std::find(scene_upscaler_preset_enum.begin(),
+                              scene_upscaler_preset_enum.end(),
+                              preset_id) == scene_upscaler_preset_enum.end()) {
+                    scene_upscaler_preset_enum.push_back(preset_id);
+                }
+            }
+        }
+
         registry.register_tool(
             McpTool{
                 .name = "render.settings.set",
@@ -2874,8 +2889,8 @@ namespace lfs::app {
                     .properties = json{
                         {"focal_length_mm", json{{"type", "number"}}},
                         {"render_scale", json{{"type", "number"}}},
-                        {"scene_upscaler", json{{"type", "string"}, {"enum", json::array({"native", "spatial"})}}},
-                        {"scene_upscaler_preset", json{{"type", "string"}, {"enum", json::array({"native", "quality", "balanced", "performance"})}}},
+                        {"scene_upscaler", json{{"type", "string"}, {"enum", scene_upscaler_backend_enum}}},
+                        {"scene_upscaler_preset", json{{"type", "string"}, {"enum", scene_upscaler_preset_enum}}},
                         {"background_color", json{{"type", "array"}, {"items", json{{"type", "number"}}}}},
                         {"environment_mode", json{{"type", "integer"}}},
                         {"environment_map_path", json{{"type", "string"}}},

@@ -433,12 +433,9 @@ namespace lfs::vis {
     void RenderingManager::updateSettings(const RenderSettings& new_settings,
                                           const DirtyMask dirty_flags) {
         RenderSettings sanitized_settings = new_settings;
-        const auto previous_settings = getSettings();
         const auto backend = sceneUpscalerBackendFromId(sanitized_settings.scene_upscaler)
                                  .value_or(SceneUpscalerBackend::Native);
-        const bool backend_changed = previous_settings.scene_upscaler !=
-                                     std::string(sceneUpscalerBackendId(backend));
-        if (backend_changed && !sceneUpscalerPreset(backend, sanitized_settings.scene_upscaler_preset)) {
+        if (!sceneUpscalerPreset(backend, sanitized_settings.scene_upscaler_preset)) {
             sanitized_settings.scene_upscaler_preset = loadSceneUpscalerPresetPreference(
                 std::string(sceneUpscalerBackendId(backend)));
         }
