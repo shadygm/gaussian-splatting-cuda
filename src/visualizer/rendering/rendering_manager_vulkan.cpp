@@ -15,8 +15,8 @@
 #include "point_cloud_vulkan_renderer.hpp"
 #include "rendering/image_layout.hpp"
 #include "rendering_manager.hpp"
-#include "scene_upscaler_registry.hpp"
 #include "scene/scene_manager.hpp"
+#include "scene_upscaler_registry.hpp"
 #include "training/trainer.hpp"
 #include "training/training_manager.hpp"
 #include "viewport_appearance_correction.hpp"
@@ -764,7 +764,7 @@ namespace lfs::vis {
                     const glm::vec2 clamp_max = glm::clamp(panel.uv_clamp_max,
                                                            glm::vec2(0.0f), glm::vec2(1.0f));
                     const glm::vec2 texture_uv = glm::min(glm::vec2(panel_u, panel_v) * panel.uv_scale,
-                                                           clamp_max);
+                                                          clamp_max);
                     const std::size_t idx = static_cast<std::size_t>(y) * width + x;
                     const auto sample_color = [&](const glm::vec2 sample_uv) {
                         return glm::vec3{

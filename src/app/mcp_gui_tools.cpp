@@ -965,8 +965,10 @@ namespace lfs::app {
                 if (!vis::sceneUpscalerPreset(*backend, preset_id)) {
                     return std::unexpected("Field 'scene_upscaler_preset' is not valid for the selected scene reconstruction backend");
                 }
-                if (args.contains("scene_upscaler")) settings.scene_upscaler = backend_id;
-                if (args.contains("scene_upscaler_preset")) settings.scene_upscaler_preset = preset_id;
+                if (args.contains("scene_upscaler"))
+                    settings.scene_upscaler = backend_id;
+                if (args.contains("scene_upscaler_preset"))
+                    settings.scene_upscaler_preset = preset_id;
                 touched = touched || args.contains("scene_upscaler") || args.contains("scene_upscaler_preset");
                 return {};
             };
@@ -1003,7 +1005,8 @@ namespace lfs::app {
             set_bool("mip_filter", settings.mip_filter);
             set_int("sh_degree", settings.sh_degree);
             set_float("render_scale", settings.render_scale);
-            if (auto result = set_scene_reconstruction(settings); !result) return result;
+            if (auto result = set_scene_reconstruction(settings); !result)
+                return result;
             set_bool("show_crop_box", settings.show_crop_box);
             set_bool("use_crop_box", settings.use_crop_box);
             set_bool("show_ellipsoid", settings.show_ellipsoid);
