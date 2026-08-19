@@ -10,6 +10,8 @@
 #include "rendering/ppisp_overrides_utils.hpp"
 #include "rendering/rendering.hpp"
 #include "rendering/selection_ops.hpp"
+#include "rendering/scene_upscaler_registry.hpp"
+#include "preferences.hpp"
 #include "scene/scene_manager.hpp"
 #include "theme/theme.hpp"
 #include "training/trainer.hpp"
@@ -431,6 +433,20 @@ namespace lfs::vis {
     void RenderingManager::updateSettings(const RenderSettings& new_settings,
                                           const DirtyMask dirty_flags) {
         RenderSettings sanitized_settings = new_settings;
+        const auto previous_settings = getSettings();
+        const auto backend = sceneUpscalerBackendFromId(sanitized_settings.scene_upscaler)
+                                 .value_or(SceneUpscalerBackend::Native);
+        const bool backend_changed = previous_settings.scene_upscaler !=
+            std::string(sceneUpscalerBackendId(backend));
+        if (backend_changed && !sceneUpscalerPreset(backend, sanitized_settings.scene_upscaler_preset)) {
+            sanitized_settings.scene_upscaler_preset = loadSceneUpscalerPresetPreference(
+                std::string(sceneUpscalerBackendId(backend)));
+        }
+        const auto preset = sceneUpscalerPreset(backend, sanitized_settings.scene_upscaler_preset)
+                                .value_or(defaultSceneUpscalerPreset(backend));
+        sanitized_settings.scene_upscaler = std::string(sceneUpscalerBackendId(backend));
+        sanitized_settings.scene_upscaler_preset = std::string(preset.id);
+        sanitized_settings.scene_upscaler_scale = preset.input_scale;
         bool clear_metrics = false;
         bool lod_request_changed = false;
         bool lod_enabled_turned_on = false;
@@ -514,6 +530,17 @@ namespace lfs::vis {
     RenderSettings RenderingManager::getSettings() const {
         std::lock_guard<std::mutex> lock(settings_mutex_);
         return settings_;
+    }
+
+    void RenderingManager::reportSceneUpscalerRuntimeSelection(
+        const SceneUpscalerSelection selection) {
+        std::lock_guard lock(settings_mutex_);
+        scene_upscaler_runtime_selection_ = selection;
+    }
+
+    SceneUpscalerSelection RenderingManager::sceneUpscalerRuntimeSelection() const {
+        std::lock_guard lock(settings_mutex_);
+        return scene_upscaler_runtime_selection_;
     }
 
     void RenderingManager::setOrthographic(const bool enabled, const float viewport_height, const float distance_to_pivot) {

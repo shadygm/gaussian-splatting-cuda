@@ -2555,6 +2555,18 @@ def get_ui_scale() -> float:
 def get_ui_scale_preference() -> float:
     """Get saved UI scale preference (0.0 = auto)"""
 
+def get_scene_reconstruction_options() -> list:
+    """Get registered scene reconstruction backends and their presets"""
+
+def get_scene_reconstruction_preset_preference(backend_id: str) -> str:
+    """Get the saved preset for a scene reconstruction backend"""
+
+def set_scene_reconstruction(backend_id: str, preset_id: str) -> bool:
+    """Atomically select a scene reconstruction backend and preset"""
+
+def reset_scene_reconstruction_preferences() -> None:
+    """Clear all saved scene reconstruction backend and preset preferences"""
+
 def get_mcp_preferences() -> dict:
     """Get effective MCP HTTP server preferences"""
 
