@@ -2253,8 +2253,14 @@ namespace lfs::vis {
         ViewportRegion viewport_region;
         bool has_viewport_region = false;
         if (gui_manager_) {
-            auto pos = gui_manager_->getViewportPos();
-            auto size = gui_manager_->getViewportSize();
+            auto pos = gui_manager_->getSceneRenderViewportPos();
+            auto size = gui_manager_->getSceneRenderViewportSize();
+
+            // A staged UI-visibility transition renders against its target extent
+            // while input and presentation continue using the previous layout.
+            viewport_.windowSize = {
+                std::max(static_cast<int>(std::lround(size.x)), 1),
+                std::max(static_cast<int>(std::lround(size.y)), 1)};
 
             viewport_region.x = pos.x;
             viewport_region.y = pos.y;
@@ -2322,6 +2328,10 @@ namespace lfs::vis {
             project_frame_started =
                 std::chrono::steady_clock::now();
             const auto vulkan_frame = rendering_manager_->renderVulkanFrame(context);
+            if (gui_manager_) {
+                gui_manager_->commitUiVisibilityTransitionIfFrameReady(
+                    vulkan_frame.matches_viewport_extent);
+            }
             {
                 auto& interop = rendering_manager_->viewportInterop();
                 if (vulkan_frame.external_image != VK_NULL_HANDLE) {
