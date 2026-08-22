@@ -128,15 +128,20 @@ namespace lfs::io {
             const auto resource_dir = lfs::core::getViewerResourcesDir();
 
             auto tmpl_result = read_text_file(resource_dir / "viewer_template.html");
-            if (!tmpl_result) return std::unexpected(tmpl_result.error());
+            if (!tmpl_result)
+                return std::unexpected(tmpl_result.error());
             auto css_result = read_text_file(resource_dir / "index.css");
-            if (!css_result) return std::unexpected(css_result.error());
+            if (!css_result)
+                return std::unexpected(css_result.error());
             auto js_result = read_text_file(resource_dir / "index.js");
-            if (!js_result) return std::unexpected(js_result.error());
+            if (!js_result)
+                return std::unexpected(js_result.error());
             auto gizmo_result = read_text_file(resource_dir / "gizmo.js");
-            if (!gizmo_result) return std::unexpected(gizmo_result.error());
+            if (!gizmo_result)
+                return std::unexpected(gizmo_result.error());
             auto measure_tool_result = read_text_file(resource_dir / "measure-tool.js");
-            if (!measure_tool_result) return std::unexpected(measure_tool_result.error());
+            if (!measure_tool_result)
+                return std::unexpected(measure_tool_result.error());
 
             const auto& tmpl = *tmpl_result;
             const auto& css = *css_result;
