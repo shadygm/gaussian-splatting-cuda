@@ -1081,8 +1081,10 @@ namespace {
 
     void process_dataset(const lfs::core::param::PreprocessParameters& params,
                          const fs::path& model_path,
-                         const PreprocessPlan& plan) {
-        print_plan_summary(params, plan, &model_path);
+                         const PreprocessPlan& plan,
+                         const lfs::preprocessing::PreprocessProgressCallback& progress) {
+        if (!progress)
+            print_plan_summary(params, plan, &model_path);
 
         int cuda_devices = 0;
         if (cudaGetDeviceCount(&cuda_devices) != cudaSuccess || cuda_devices <= 0) {
@@ -1092,7 +1094,8 @@ namespace {
         const fs::path lfw_path = lfw_path_for_onnx(model_path);
         ensure_native_weights(lfw_path, model_path);
         NativeMogeSession native_session(lfw_path);
-        std::cout << "Weights: " << path_to_string(lfw_path) << "\n";
+        if (!progress)
+            std::cout << "Weights: " << path_to_string(lfw_path) << "\n";
 
         const auto run_inference = [&](const Image& image, int64_t num_tokens) {
             return native_session.run(image, num_tokens);
@@ -1108,7 +1111,7 @@ namespace {
         std::deque<std::future<void>> writes;
 
         std::optional<PreprocessProgressBar> bar;
-        if (stdout_is_tty() && !plan.jobs.empty())
+        if (!progress && stdout_is_tty() && !plan.jobs.empty())
             bar.emplace(plan.jobs.size());
 
         std::deque<std::future<LoadedImage>> pending_loads;
@@ -1123,7 +1126,7 @@ namespace {
 
         for (std::size_t i = 0; i < plan.jobs.size(); ++i) {
             const PreprocessJob& job = plan.jobs[i];
-            if (!bar) {
+            if (!bar && !progress) {
                 std::cout << "[" << (i + 1) << "/" << plan.jobs.size() << "] "
                           << path_to_string(job.image_path) << "\n";
             }
@@ -1138,8 +1141,10 @@ namespace {
                 std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - inference_start).count();
             if (bar)
                 bar->report(i + 1, job.image_path.filename().string(), inference_ms);
-            else
+            else if (!progress)
                 std::cout << "  inference " << inference_ms << " ms\n";
+            if (progress)
+                progress(i + 1, plan.jobs.size(), job.image_path.filename().string());
 
             while (!writes.empty() && writes.front().wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
                 writes.front().get();
@@ -1183,30 +1188,35 @@ namespace {
 
         if (bar)
             bar->complete();
-        std::cout << "Done. processed=" << plan.jobs.size() << " skipped=" << plan.skipped << "\n";
+        if (!progress)
+            std::cout << "Done. processed=" << plan.jobs.size() << " skipped=" << plan.skipped << "\n";
     }
 
-} // namespace
-
-namespace lfs::preprocessing {
-
-    int run_preprocess(const lfs::core::param::PreprocessParameters& params) {
+    lfs::preprocessing::PreprocessRunResult execute_preprocess(
+        const lfs::core::param::PreprocessParameters& params,
+        const lfs::preprocessing::PreprocessProgressCallback& progress) {
+        lfs::preprocessing::PreprocessRunResult result;
         try {
             if (params.download_only) {
                 fs::path model_path = params.model_path;
                 if (model_path.empty())
                     model_path = ensure_default_model(params.no_download);
-                std::cout << "Cached model: " << path_to_string(model_path) << "\n";
-                return 0;
+                if (!progress)
+                    std::cout << "Cached model: " << path_to_string(model_path) << "\n";
+                return result;
             }
 
             const PreprocessPlan plan = build_preprocess_plan(params);
+            result.skipped = plan.skipped;
             if (plan.jobs.empty()) {
-                print_plan_summary(params, plan, nullptr);
-                std::cout << "No outputs need preprocessing; model inference skipped.\n";
+                if (!progress) {
+                    print_plan_summary(params, plan, nullptr);
+                    std::cout << "No outputs need preprocessing; model inference skipped.\n";
+                }
                 precompute_depth_anchors(params);
-                std::cout << "Done. processed=0 skipped=" << plan.skipped << "\n";
-                return 0;
+                if (!progress)
+                    std::cout << "Done. processed=0 skipped=" << plan.skipped << "\n";
+                return result;
             }
 
             fs::path model_path = params.model_path;
@@ -1216,13 +1226,33 @@ namespace lfs::preprocessing {
             if (!fs::is_regular_file(model_path))
                 throw std::runtime_error("Model file does not exist: " + path_to_string(model_path));
 
-            process_dataset(params, model_path, plan);
+            process_dataset(params, model_path, plan, progress);
+            result.processed = plan.jobs.size();
             precompute_depth_anchors(params);
-            return 0;
+            return result;
         } catch (const std::exception& e) {
-            std::cerr << "preprocess: " << e.what() << "\n";
+            result.ok = false;
+            result.error = e.what();
+            return result;
+        }
+    }
+
+} // namespace
+
+namespace lfs::preprocessing {
+
+    PreprocessRunResult run_preprocess_ex(const lfs::core::param::PreprocessParameters& params,
+                                          const PreprocessProgressCallback& progress) {
+        return execute_preprocess(params, progress);
+    }
+
+    int run_preprocess(const lfs::core::param::PreprocessParameters& params) {
+        const auto result = run_preprocess_ex(params, {});
+        if (!result.ok) {
+            std::cerr << "preprocess: " << result.error << "\n";
             return 1;
         }
+        return 0;
     }
 
 } // namespace lfs::preprocessing
