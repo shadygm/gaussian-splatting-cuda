@@ -146,7 +146,6 @@ namespace lfs::training {
             _normal_prior_decode = decode;
         }
 
-
         // Check if evaluation is enabled
         bool is_enabled() const { return _params.optimization.enable_eval; }
 
