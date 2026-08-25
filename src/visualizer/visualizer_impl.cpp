@@ -892,7 +892,7 @@ namespace lfs::vis {
             viewport_.camera.setPivot(target);
 
             if (rendering_manager_)
-                rendering_manager_->markCameraPoseChanged();
+                rendering_manager_->markCameraCut();
         });
         callback_cleanup_.add([] { vis::set_set_view_callback(nullptr); });
 
@@ -915,7 +915,7 @@ namespace lfs::vis {
             vp.setViewMatrix(*rotation, eye);
             vp.camera.setPivot(target);
 
-            rendering_manager_->markCameraPoseChanged();
+            rendering_manager_->markCameraCut();
         });
         callback_cleanup_.add([] { vis::set_set_view_for_panel_callback(nullptr); });
 
@@ -976,14 +976,19 @@ namespace lfs::vis {
                 return rendering_manager_ ? std::optional{vis::to_proxy(rendering_manager_->getSettings())}
                                           : std::nullopt;
             },
-            [this](const vis::RenderSettingsProxy& proxy) {
+            [this](const vis::RenderSettingsProxy& proxy,
+                   const vis::RenderSettingsUpdateIntent intent) {
                 if (!rendering_manager_)
                     return;
                 auto s = rendering_manager_->getSettings();
                 const std::string previous_upscaler = s.scene_upscaler;
                 const std::string previous_preset = s.scene_upscaler_preset;
                 vis::apply_proxy(s, proxy);
-                rendering_manager_->updateSettings(s);
+                const auto preset_update =
+                    intent.scene_upscaler_explicit && !intent.scene_upscaler_preset_explicit
+                        ? SceneUpscalerPresetUpdate::RestoreRememberedForBackend
+                        : SceneUpscalerPresetUpdate::UseRequested;
+                rendering_manager_->updateSettings(s, DirtyFlag::ALL, preset_update);
                 const auto& applied = rendering_manager_->getSettings();
                 if (applied.scene_upscaler != previous_upscaler ||
                     applied.scene_upscaler_preset != previous_preset) {
