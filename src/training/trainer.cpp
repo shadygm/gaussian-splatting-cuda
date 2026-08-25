@@ -7964,6 +7964,11 @@ namespace lfs::training {
                 params_.optimization.normal_loss_weight > 0.0f;
             if (aux_pipeline_config.load_normals) {
                 ensure_training_normal_maps(params_, train_dataset_->get_cameras());
+                if (val_dataset_) {
+                    // Scene-path val cameras are a separate list, so generate
+                    // their missing maps too for the eval normal metric.
+                    ensure_training_normal_maps(params_, val_dataset_->get_cameras());
+                }
                 normal_prior_flip_yz_ = false;
                 normal_prior_world_space_ = false;
                 normal_prior_srgb_ = false;
