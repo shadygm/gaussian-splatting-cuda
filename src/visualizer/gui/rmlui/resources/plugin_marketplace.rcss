@@ -278,7 +278,7 @@
 .card-grid.card-grid--list {
     display: flex;
     flex-direction: column;
-    gap: 6dp;
+    gap: 4dp;
     border-width: 0;
 }
 
@@ -349,6 +349,7 @@
 
 .card-repo {
     display: block;
+    flex: 0 0 auto;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -364,6 +365,7 @@
 .card-status,
 .card-error {
     display: block;
+    flex: 0 0 auto;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -496,12 +498,14 @@
 }
 
 .plugin-list-summary {
+    box-sizing: border-box;
     display: flex;
     align-items: center;
-    gap: 7dp;
+    gap: 6dp;
     min-width: 0;
+    height: 32dp;
     min-height: 32dp;
-    padding: 4dp 9dp;
+    padding: 3dp 9dp;
     overflow: hidden;
 }
 
@@ -551,7 +555,7 @@
 .plugin-list-summary-right {
     display: flex;
     align-items: center;
-    gap: 8dp;
+    gap: 6dp;
     margin-left: auto;
     flex-shrink: 0;
 }
@@ -575,9 +579,9 @@
 .plugin-list-details {
     display: flex;
     flex-direction: column;
-    gap: 7dp;
+    gap: 5dp;
     min-width: 0;
-    padding: 0 11dp 10dp 38dp;
+    padding: 0 11dp 7dp 38dp;
     border-top-width: 1dp;
     overflow: hidden;
 }
@@ -590,9 +594,9 @@
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 5dp 10dp;
+    gap: 3dp 8dp;
     min-width: 0;
-    padding-top: 7dp;
+    padding-top: 5dp;
     overflow: hidden;
 }
 
@@ -637,7 +641,7 @@
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 8dp;
+    gap: 6dp;
     min-width: 0;
 }
 
