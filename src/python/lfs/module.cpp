@@ -26,6 +26,7 @@
 #include "py_mcp.hpp"
 #include "py_mesh.hpp"
 #include "py_mesh2splat.hpp"
+#include "py_nn.hpp"
 #include "py_operator.hpp"
 #include "py_packages.hpp"
 #include "py_params.hpp"
@@ -2544,6 +2545,9 @@ NB_MODULE(lichtfeld, m) {
 
     // Register Tensor class
     lfs::python::register_tensor(m);
+
+    auto nn_module = m.def_submodule("nn", "Neural network inference");
+    lfs::python::register_nn(nn_module);
 
     // Scene submodule
     auto scene_module = m.def_submodule("scene", "Scene graph API");
