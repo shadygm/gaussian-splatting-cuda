@@ -642,8 +642,10 @@ class PluginMarketplacePanel(Panel):
 
         return (
             f'<div class="card-info"{info_attr_text}>'
+            '<div class="card-title-row">'
             f'<span class="card-name">{esc("name")}</span>'
             f'{version_span}'
+            '</div>'
             f'{repo_span}'
             f'{metrics_span}'
             f'{tags_span}'
@@ -960,6 +962,12 @@ class PluginMarketplacePanel(Panel):
         status_el.set_class("status-info", tone == "status-info")
         status_el.set_class("status-success", tone == "status-success")
         status_el.set_class("status-warning", tone == "status-warning")
+
+        dot_el = doc.get_element_by_id("catalog-status-dot")
+        if dot_el:
+            dot_el.set_class("status-info", tone == "status-info")
+            dot_el.set_class("status-success", tone == "status-success")
+            dot_el.set_class("status-warning", tone == "status-warning")
 
     def _sync_feedback_state(self, doc, element_prefix: str, state: CardOpState, working_text: str):
         feedback_el = doc.get_element_by_id(element_prefix)

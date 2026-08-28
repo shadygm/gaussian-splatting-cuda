@@ -441,3 +441,23 @@ def test_plugin_marketplace_auto_expanded_row_can_be_collapsed_and_reopened(
 
     panel._set_list_row_expanded("sample-card", True, rerender=False)
     assert panel._is_list_row_expanded("sample-card") is True
+
+
+def test_plugin_marketplace_resources_use_unified_window_language(plugin_marketplace_module):
+    root = Path(__file__).parent.parent.parent
+    resources = root / "src" / "visualizer" / "gui" / "rmlui" / "resources"
+    rml = (resources / "plugin_marketplace.rml").read_text(encoding="utf-8")
+    rcss = (resources / "plugin_marketplace.rcss").read_text(encoding="utf-8")
+    theme_rcss = (resources / "plugin_marketplace.theme.rcss").read_text(encoding="utf-8")
+
+    assert '<body template="floating-window"' in rml
+    assert 'class="mp-intro"' in rml
+    assert 'class="mp-manual-section"' in rml
+    assert 'class="mp-empty-state hidden"' in rml
+    assert ".mp-controls {" in rcss
+    assert ".mp-manual-section {" in rcss
+    assert ".plugin-card {" in rcss
+    assert ".plugin-list-summary {" in rcss
+    assert ".confirm-dialog {" in rcss
+    assert "background-color: @{surface};" in theme_rcss
+    assert "border-color: @{primary};" in theme_rcss
