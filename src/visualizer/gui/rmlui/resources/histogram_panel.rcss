@@ -1,429 +1,308 @@
-#content-wrap {
+/* Histogram panel — panel-specific layout only.
+ * Shared controls, typography, and theme colors live in components.rcss and
+ * histogram_panel.theme.rcss. Keep this file focused on structure so the
+ * panel follows the same window language in every theme and docking mode. */
+
+body {
+    font-family: Inter;
     padding: 0;
-    overflow: hidden;
-    min-width: 0;
-    min-height: 0;
+    bottom: 0;
 }
 
-#content {
-    width: 100%;
-    height: 100%;
+#content-wrap {
     display: flex;
     flex-direction: column;
     flex: 1;
-    overflow: hidden;
     min-width: 0;
     min-height: 0;
+    padding: 6dp;
+    overflow: hidden;
 }
 
-.dock-drag-handle {
-    flex: 0 0 auto;
-    height: 8dp;
+#content {
     display: flex;
+    flex-direction: column;
+    flex: 1;
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+}
+
+/* The drag affordance is the same compact handle used by other resizable
+ * bottom-dock panels. */
+.dock-drag-handle {
+    display: flex;
+    flex: 0 0 auto;
     align-items: center;
     justify-content: center;
+    height: 8dp;
     padding-top: 3dp;
 }
 
 .dock-drag-handle-bar {
     width: 36dp;
     height: 3dp;
-    background-color: rgba(108, 112, 134, 160);
     border-radius: 2dp;
 }
 
-.dock-drag-handle:hover .dock-drag-handle-bar {
-    background-color: rgba(137, 180, 250, 220);
-}
-
-.dock-drag-handle.hidden {
+.dock-drag-handle.hidden,
+.hidden {
     display: none;
 }
 
 #histogram-shell {
-    flex: 1;
-    padding: 8dp 10dp 12dp;
     display: flex;
+    flex: 1;
     flex-direction: column;
-    gap: 8dp;
-    overflow: hidden;
+    gap: 6dp;
     min-width: 0;
     min-height: 0;
+    overflow: hidden;
 }
 
 #histogram-shell.is-floating {
-    padding-top: 10dp;
+    padding-top: 4dp;
 }
 
 #histogram-floating-header {
-    min-height: 28dp;
     display: flex;
     align-items: center;
     justify-content: space-between;
+    flex: 0 0 auto;
+    min-height: 28dp;
     gap: 8dp;
     padding: 0 4dp;
 }
 
 #histogram-floating-title {
+    min-width: 0;
     font-size: 12dp;
-    font-weight: bold;
-    color: #cdd6f4;
+    font-weight: 600;
 }
 
-.histogram-panel-actions {
+.histogram-window-actions,
+.histogram-heading-actions {
     display: flex;
     align-items: center;
     justify-content: flex-end;
+    flex: 0 0 auto;
     gap: 6dp;
 }
 
-.histogram-panel-actions--floating {
-    flex-shrink: 0;
-}
-
-.histogram-panel-action {
+.histogram-window-action {
     min-width: 64dp;
+    min-height: 26dp;
 }
 
-#histogram-hero,
-.stat-card,
-#histogram-card,
-.empty-card,
-#compare-card,
-#histogram-footer {
-    background-color: rgba(30, 30, 46, 236);
-    border-width: 1dp;
-    border-color: rgba(88, 91, 112, 148);
-}
-
-#histogram-hero {
+/* Header and toolbar are one compact window chrome unit. The header carries
+ * context; the toolbar carries the controls without duplicating a second
+ * floating-only control tree. */
+#histogram-header {
     display: flex;
-    gap: 22dp;
     align-items: center;
-    justify-content: flex-start;
-    padding: 12dp 16dp;
-    decorator: vertical-gradient(rgba(49,50,68,228) rgba(30,30,46,236));
-    border-radius: 14dp;
+    justify-content: space-between;
+    flex: 0 0 auto;
     min-width: 0;
+    min-height: 58dp;
+    gap: 16dp;
+    padding: 10dp 12dp;
+    border-width: 1dp;
+    border-radius: 8dp 8dp 0 0;
 }
 
-.hero-copy {
-    flex: 0 1 330dp;
+.histogram-heading {
     display: flex;
+    flex: 1 1 240dp;
     flex-direction: column;
-    gap: 3dp;
     min-width: 0;
+    gap: 2dp;
 }
 
-.hero-eyebrow {
-    font-size: 12dp;
+.histogram-eyebrow,
+.histogram-control-label,
+.stat-label,
+.footer-label,
+.axis-metric {
+    font-size: 11dp;
     letter-spacing: 0.25dp;
-    color: #bac2de;
     text-transform: uppercase;
 }
 
-.hero-title {
-    font-size: 17dp;
-    font-weight: bold;
-    color: #cdd6f4;
-}
-
-.hero-description {
-    font-size: 12dp;
-    color: #bac2de;
-}
-
-#histogram-docked-controls {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
+.histogram-title {
     min-width: 0;
-    padding-left: 16dp;
-    border-left-width: 1dp;
-    border-left-color: rgba(69, 71, 90, 180);
-}
-
-#histogram-floating-controls {
-    width: 100%;
-    display: flex;
-    flex-direction: column;
-    gap: 8dp;
-}
-
-.histogram-toolbar-row {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    flex-wrap: wrap;
-    gap: 12dp;
-    width: 100%;
-    min-width: 0;
-}
-
-.histogram-inline-label {
-    min-width: 0;
-    flex-shrink: 0;
+    overflow: hidden;
+    font-size: 15dp;
+    font-weight: 600;
+    text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-.histogram-toolbar-item {
-    display: flex;
-    align-items: center;
-    gap: 8dp;
+.histogram-description {
     min-width: 0;
-}
-
-.histogram-toolbar-item--select {
-    flex: 0 1 248dp;
-}
-
-.histogram-toolbar-item--slider {
-    flex: 0 1 260dp;
-}
-
-.histogram-toolbar-item--compare-bins {
-    flex: 0 1 196dp;
-}
-
-.histogram-toolbar-item--toggle {
-    flex: 0 0 auto;
-}
-
-.histogram-toolbar-item--action {
-    flex: 0 0 auto;
-    margin-left: 4dp;
-}
-
-#histogram-docked-controls .histogram-toolbar-item {
-    min-height: 34dp;
-    padding: 6dp 10dp;
-    background-color: rgba(49, 50, 68, 214);
-    border-width: 1dp;
-    border-color: rgba(69, 71, 90, 180);
-    border-radius: 10dp;
-}
-
-#histogram-docked-controls .histogram-toolbar-item--select {
-    flex: 0 1 232dp;
-}
-
-#histogram-docked-controls .histogram-toolbar-item--slider {
-    flex: 0 1 248dp;
-}
-
-#histogram-docked-controls .histogram-toolbar-item--compare-bins {
-    flex: 0 1 188dp;
-}
-
-#histogram-docked-controls .histogram-toolbar-item--toggle {
-    padding-right: 10dp;
-}
-
-#histogram-docked-controls .histogram-toolbar-item--action {
-    padding: 0;
-    background-color: transparent;
-    border-width: 0;
-    margin-left: 2dp;
-}
-
-#histogram-docked-controls .control-label {
+    overflow: hidden;
     font-size: 12dp;
-    font-weight: 600;
-    color: #bac2de;
+    line-height: 16dp;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-#histogram-docked-controls .histogram-select {
-    min-width: 124dp;
-    height: 26dp;
-    min-height: 26dp;
-    background-color: rgba(24, 24, 37, 226);
-    border-color: rgba(88, 91, 112, 200);
-}
-
-#histogram-docked-controls .histogram-slider-value {
-    min-width: 20dp;
-}
-
-#histogram-docked-controls .histogram-panel-action {
-    min-width: 76dp;
-    min-height: 32dp;
-}
-
-.histogram-toggle-control {
+#histogram-controls {
     display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    min-width: 26dp;
+    align-items: flex-end;
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    gap: 8dp 10dp;
+    min-width: 0;
+    padding: 8dp 10dp 9dp;
+    border-width: 1dp;
+    border-top-width: 0;
+    border-radius: 0 0 8dp 8dp;
 }
 
-.histogram-toggle-control input[type="checkbox"] {
-    margin-right: 0;
+.histogram-control-block {
+    display: flex;
+    flex: 1 1 170dp;
+    flex-direction: column;
+    min-width: 126dp;
+    gap: 3dp;
 }
 
-.control-label {
-    font-size: 12dp;
+.histogram-control-block--select {
+    flex-basis: 180dp;
+}
+
+.histogram-control-block--toggle {
+    flex: 0 1 96dp;
+    min-width: 84dp;
+}
+
+.histogram-control-block--slider {
+    flex-basis: 164dp;
+}
+
+.histogram-control-label {
     font-weight: 600;
-    letter-spacing: 0.3dp;
-    color: #bac2de;
 }
 
 .histogram-select {
     width: 100%;
-    flex: 1;
+    min-width: 0;
+    height: 24dp;
+    min-height: 24dp;
+}
+
+.histogram-slider-row {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    height: 24dp;
+    gap: 6dp;
 }
 
 .histogram-setting-slider {
-    width: 100%;
     flex: 1;
-    min-width: 84dp;
+    min-width: 60dp;
     margin-top: 0;
     position: static;
     top: auto;
 }
 
 .histogram-slider-value {
-    min-width: 28dp;
+    display: inline-block;
+    flex: 0 0 30dp;
+    min-width: 30dp;
     text-align: right;
+    font-family: "JetBrains Mono";
     font-size: 12dp;
-    color: #cdd6f4;
 }
 
-.floating-controls-row {
-    display: flex;
-    align-items: stretch;
-    flex-wrap: wrap;
-    gap: 8dp 12dp;
-    width: 100%;
-    min-width: 0;
-}
-
-.floating-control-group {
+.histogram-toggle-control {
     display: flex;
     align-items: center;
-    gap: 8dp;
-    min-width: 0;
+    min-height: 24dp;
 }
 
-.floating-control-group--select {
-    flex: 1 1 260dp;
-}
-
-.floating-control-group--toggle {
-    flex: 0 0 auto;
-}
-
-.floating-control-group--slider {
-    flex: 1 1 260dp;
-}
-
-#histogram-shell.is-floating #histogram-hero {
-    flex-direction: column;
-    align-items: stretch;
-    justify-content: flex-start;
-    gap: 10dp;
-    padding: 12dp 14dp;
-}
-
-#histogram-shell.is-floating .control-label {
-    font-size: 12dp;
-    font-weight: 600;
-    letter-spacing: 0.3dp;
-    text-transform: none;
-    color: #bac2de;
-}
-
-#histogram-shell.is-floating .hero-title {
-    font-size: 17dp;
-}
-
-#histogram-shell.is-floating .hero-description {
-    font-size: 12dp;
-}
-
-#histogram-shell.is-floating .hero-copy {
-    flex: 0 0 auto;
-}
-
-.floating-control-label {
-    min-width: 96dp;
-    flex-shrink: 0;
+.histogram-toggle-control input[type="checkbox"] {
+    margin: 0;
 }
 
 #histogram-empty {
+    display: flex;
     flex: 1;
+    min-width: 0;
     min-height: 0;
 }
 
 .empty-card {
-    height: 100%;
-    min-height: 220dp;
     display: flex;
-    flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 8dp;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 180dp;
+    gap: 6dp;
     padding: 18dp;
-    decorator: none;
-    border-radius: 14dp;
+    border-width: 1dp;
+    border-radius: 8dp;
     text-align: center;
 }
 
 .empty-title {
-    font-size: 16dp;
-    font-weight: bold;
-    color: #cdd6f4;
+    font-size: 14dp;
+    font-weight: 600;
 }
 
 .empty-message {
-    max-width: 420dp;
+    max-width: 440dp;
     font-size: 12dp;
-    color: #bac2de;
-    line-height: 1.45;
+    line-height: 17dp;
 }
 
 #histogram-content {
     display: flex;
-    flex-direction: column;
-    gap: 10dp;
     flex: 1;
-    overflow-x: hidden;
-    overflow-y: auto;
-    padding-right: 4dp;
+    flex-direction: column;
     min-width: 0;
     min-height: 0;
+    gap: 8dp;
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding-right: 2dp;
 }
 
 #histogram-stats {
     display: flex;
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    min-width: 0;
     gap: 6dp;
-    flex-shrink: 0;
-    overflow-x: auto;
-    overflow-y: hidden;
 }
 
 .stat-card {
-    flex: 0 0 auto;
-    min-width: 124dp;
-    padding: 8dp 10dp;
     display: flex;
+    flex: 1 1 112dp;
     flex-direction: column;
+    min-width: 104dp;
+    min-height: 48dp;
     gap: 3dp;
-    decorator: none;
-    border-radius: 12dp;
+    padding: 7dp 9dp;
+    border-width: 1dp;
+    border-radius: 7dp;
 }
 
-.stat-label {
-    font-size: 12dp;
-    letter-spacing: 0.2dp;
-    text-transform: uppercase;
-    color: #bac2de;
+.stat-card--primary {
+    flex-basis: 120dp;
 }
 
 .stat-value {
+    min-width: 0;
+    overflow: hidden;
     font-size: 14dp;
-    font-weight: bold;
-    color: #cdd6f4;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .stat-value--small {
@@ -432,98 +311,111 @@
 
 #histogram-card,
 #compare-card {
-    flex: 1;
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
     min-width: 0;
     min-height: 0;
-    padding: 12dp 12dp 10dp;
-    display: flex;
-    flex-direction: column;
     gap: 8dp;
-    decorator: none;
-    border-radius: 14dp;
+    padding: 10dp;
+    border-width: 1dp;
+    border-radius: 8dp;
 }
 
-#histogram-card-header,
-#compare-card-header {
+#compare-card {
+    min-height: 320dp;
+}
+
+.histogram-card-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 14dp;
+    flex: 0 0 auto;
+    min-width: 0;
+    gap: 10dp;
 }
 
 #histogram-summary,
 #compare-summary {
     flex: 1;
+    min-width: 0;
+    overflow: hidden;
     font-size: 12dp;
-    color: #bac2de;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-#histogram-bin-count,
-#compare-bin-count {
-    font-size: 12dp;
-    letter-spacing: 0.25dp;
+.histogram-chip {
+    flex: 0 0 auto;
+    padding: 2dp 7dp;
+    border-width: 1dp;
+    border-radius: 999dp;
+    font-size: 11dp;
+    letter-spacing: 0.2dp;
     text-transform: uppercase;
-    color: #bac2de;
 }
 
-#histogram-range-of-interest {
+.histogram-range-toolbar {
     display: flex;
     align-items: center;
-    gap: 8dp;
-    flex-shrink: 0;
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    min-width: 0;
+    gap: 6dp;
+    padding: 6dp 7dp;
+    border-width: 1dp;
+    border-radius: 6dp;
 }
 
 .range-of-interest-label {
+    flex: 0 0 auto;
+    margin-right: 2dp;
     font-size: 12dp;
     font-weight: 600;
-    letter-spacing: 0.3dp;
-    color: #bac2de;
 }
 
 .range-input {
+    flex: 0 1 96dp;
     width: 96dp;
     min-width: 72dp;
+    height: 24dp;
+    min-height: 24dp;
+    font-family: "JetBrains Mono";
 }
 
 .range-separator {
-    color: rgba(186, 194, 222, 180);
+    flex: 0 0 auto;
     font-size: 12dp;
 }
 
 .range-reset {
+    flex: 0 0 auto;
     min-width: 56dp;
-    margin-left: 4dp;
+    min-height: 24dp;
+    margin-left: 2dp;
 }
 
 .range-reset:disabled {
-    color: rgba(186, 194, 222, 100);
-}
-
-#compare-range-of-interest {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 6dp;
-    flex-shrink: 0;
+    opacity: 0.45;
 }
 
 .compare-axis-marker {
-    font-size: 12dp;
+    flex: 0 0 auto;
+    margin-left: 3dp;
+    font-size: 11dp;
     font-weight: 700;
     letter-spacing: 0.4dp;
-    color: #a6adc8;
-    margin-left: 6dp;
 }
 
-#histogram-chart {
+#histogram-chart,
+#compare-chart {
     position: relative;
     flex: 1;
-    min-height: 128dp;
-    border-width: 1dp;
-    border-color: rgba(69, 71, 90, 190);
-    border-radius: 12dp;
-    background-color: rgba(17, 17, 27, 232);
+    min-width: 0;
+    min-height: 148dp;
     overflow: hidden;
+    border-width: 1dp;
+    border-radius: 7dp;
 }
 
 .histogram-grid-line {
@@ -531,7 +423,6 @@
     left: 0;
     right: 0;
     height: 1dp;
-    background-color: rgba(69, 71, 90, 120);
     pointer-events: none;
 }
 
@@ -553,12 +444,13 @@
 
 #histogram-bars {
     position: absolute;
-    left: 14dp;
-    right: 14dp;
-    top: 14dp;
-    bottom: 14dp;
+    top: 12dp;
+    right: 12dp;
+    bottom: 12dp;
+    left: 12dp;
     display: flex;
     align-items: flex-end;
+    min-width: 0;
     cursor: crosshair;
 }
 
@@ -568,108 +460,113 @@
     bottom: 0;
     min-width: 2dp;
     border-width: 1dp;
-    border-color: rgba(250, 179, 135, 210);
-    background-color: rgba(250, 179, 135, 22);
-    decorator: none;
-    border-radius: 10dp;
+    border-radius: 5dp;
     pointer-events: none;
 }
 
 .histogram-bar {
+    position: relative;
+    display: flex;
+    align-items: flex-end;
     flex: 1;
     min-width: 0;
     height: 100%;
-    display: flex;
-    align-items: flex-end;
-    position: relative;
 }
 
 .histogram-bar-fill {
     width: 100%;
     min-height: 1dp;
-    decorator: vertical-gradient(rgba(137,180,250,228) rgba(180,190,254,255));
-    background-color: rgba(137, 180, 250, 220);
-    border-radius: 999dp 999dp 4dp 4dp;
+    border-radius: 999dp 999dp 3dp 3dp;
 }
 
-.histogram-bar.selected .histogram-bar-fill {
-    background-color: rgba(250, 179, 135, 228);
-    decorator: vertical-gradient(rgba(250,179,135,236) rgba(245,194,231,255));
-}
-
-#histogram-axis {
+#histogram-axis,
+#compare-axis {
     display: flex;
-    justify-content: space-between;
     align-items: center;
+    justify-content: space-between;
+    flex: 0 0 auto;
+    min-width: 0;
+    gap: 10dp;
 }
 
-#compare-card {
-    flex: 0 0 auto;
-    min-height: 320dp;
-    border-width: 1dp;
-    border-color: rgba(88, 91, 112, 148);
+.axis-label {
+    min-width: 0;
+    overflow: hidden;
+    font-family: "JetBrains Mono";
+    font-size: 11dp;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 #compare-empty {
-    min-height: 220dp;
+    display: flex;
+    flex: 1;
+    min-height: 0;
 }
 
 .compare-empty-card {
-    min-height: 220dp;
+    min-height: 200dp;
 }
 
 #compare-content {
     display: flex;
-    flex-direction: column;
-    gap: 8dp;
     flex: 1;
+    flex-direction: column;
+    min-width: 0;
     min-height: 0;
+    gap: 8dp;
 }
 
 #compare-chart-shell {
     display: flex;
-    gap: 10dp;
     flex: 1;
+    min-width: 0;
     min-height: 260dp;
+    gap: 8dp;
 }
 
 #compare-y-axis {
-    width: 88dp;
     display: flex;
+    flex: 0 0 78dp;
     flex-direction: column;
-    justify-content: space-between;
     align-items: flex-end;
-    padding-top: 2dp;
-    padding-bottom: 22dp;
+    justify-content: space-between;
+    min-width: 0;
+    padding: 2dp 0 20dp;
     gap: 8dp;
+}
+
+#compare-y-axis-values {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    align-items: flex-end;
+    justify-content: space-between;
+    width: 100%;
+    min-width: 0;
 }
 
 #compare-chart-column {
-    flex: 1;
     display: flex;
+    flex: 1;
     flex-direction: column;
-    gap: 8dp;
     min-width: 0;
     min-height: 0;
+    gap: 6dp;
 }
 
 #compare-chart {
-    position: relative;
-    flex: 1;
-    min-height: 240dp;
-    border-width: 1dp;
-    border-color: rgba(69, 71, 90, 190);
-    border-radius: 12dp;
-    background-color: rgba(17, 17, 27, 232);
-    overflow: hidden;
+    min-height: 236dp;
 }
 
 #compare-cells {
     position: absolute;
-    left: 14dp;
-    right: 14dp;
-    top: 14dp;
-    bottom: 14dp;
+    top: 12dp;
+    right: 12dp;
+    bottom: 12dp;
+    left: 12dp;
+    min-width: 0;
+    min-height: 0;
     cursor: crosshair;
 }
 
@@ -678,21 +575,18 @@
     min-width: 2dp;
     min-height: 2dp;
     border-width: 1dp;
-    border-color: rgba(250, 179, 135, 210);
-    background-color: rgba(250, 179, 135, 22);
-    decorator: none;
-    border-radius: 10dp;
+    border-radius: 5dp;
     pointer-events: none;
 }
 
 .compare-cell {
     position: absolute;
-    left: 0%;
     top: 0%;
+    left: 0%;
     width: 0%;
     height: 0%;
-    padding: 1dp;
     box-sizing: border-box;
+    padding: 1dp;
 }
 
 .compare-cell-fill {
@@ -700,130 +594,91 @@
     height: 100%;
     min-width: 1dp;
     min-height: 1dp;
-    decorator: vertical-gradient(rgba(137,180,250,228) rgba(180,190,254,255));
-    background-color: rgba(137, 180, 250, 220);
-    border-radius: 4dp;
-}
-
-.compare-cell.selected .compare-cell-fill {
-    background-color: rgba(250, 179, 135, 228);
-    decorator: vertical-gradient(rgba(250,179,135,236) rgba(245,194,231,255));
-}
-
-#compare-axis {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 12dp;
-}
-
-#compare-y-axis-values {
-    flex: 1;
-    width: 100%;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    align-items: flex-end;
-}
-
-.axis-metric {
-    flex-shrink: 0;
-    font-size: 12dp;
-    letter-spacing: 0.25dp;
-    text-transform: uppercase;
-    color: #bac2de;
-}
-
-.axis-label {
-    font-family: "JetBrains Mono";
-    font-size: 12dp;
-    color: #bac2de;
+    border-radius: 3dp;
 }
 
 #histogram-footer {
-    min-height: 54dp;
-    padding: 10dp 12dp;
     display: flex;
     align-items: center;
+    flex: 0 0 auto;
     flex-wrap: wrap;
-    gap: 12dp;
-    flex-shrink: 0;
     min-width: 0;
+    min-height: 48dp;
+    gap: 10dp;
+    padding: 8dp 10dp;
     border-width: 1dp;
-    border-color: rgba(88, 91, 112, 148);
-    border-radius: 12dp;
+    border-radius: 8dp;
 }
 
-.footer-stat {
+.footer-selection-stat {
     display: flex;
+    flex: 0 1 132dp;
     flex-direction: column;
+    min-width: 112dp;
     gap: 2dp;
-    min-width: 120dp;
-}
-
-.footer-label {
-    font-size: 12dp;
-    letter-spacing: 0.2dp;
-    text-transform: uppercase;
-    color: #bac2de;
 }
 
 .footer-value {
+    min-width: 0;
+    overflow: hidden;
     font-family: "JetBrains Mono";
-    font-size: 12dp;
-    color: #cdd6f4;
+    font-size: 11dp;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .footer-hint {
-    flex: 1;
-    min-width: 160dp;
-    color: #bac2de;
-    font-size: 12dp;
-    line-height: 1.35;
+    flex: 1 1 180dp;
+    min-width: 140dp;
+    font-size: 11dp;
+    line-height: 15dp;
+}
+
+.footer-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex: 0 0 auto;
+    flex-wrap: wrap;
+    gap: 8dp;
 }
 
 .footer-history-actions,
 .footer-text-actions {
     display: flex;
     align-items: center;
-    gap: 8dp;
+    gap: 6dp;
 }
 
 .footer-history-actions {
     padding: 2dp;
     border-width: 1dp;
-    border-color: rgba(69, 71, 90, 190);
-    border-radius: 10dp;
-    background-color: rgba(49, 50, 68, 210);
+    border-radius: 6dp;
 }
 
 .histogram-history-btn {
-    width: 30dp;
-    height: 30dp;
-    min-width: 30dp;
+    width: 28dp;
+    min-width: 28dp;
+    height: 28dp;
+    min-height: 28dp;
     padding: 0;
-    border-radius: 9dp;
+    border-radius: 5dp;
 }
 
 .histogram-history-icon {
     display: block;
-    width: 16dp;
-    height: 16dp;
+    width: 15dp;
+    height: 15dp;
     margin: 6dp auto 0;
-    image-color: rgba(236, 241, 255, 235);
-}
-
-.histogram-history-btn:disabled .histogram-history-icon {
-    image-color: rgba(188, 194, 214, 118);
 }
 
 .footer-text-action {
-    min-width: 78dp;
+    min-width: 68dp;
+    min-height: 28dp;
 }
 
 #histogram-floating-header.hidden,
-#histogram-docked-controls.hidden,
-#histogram-floating-controls.hidden,
+#histogram-heading-actions.hidden,
 #histogram-empty.hidden,
 #histogram-content.hidden,
 #histogram-card.hidden,
@@ -832,6 +687,7 @@
 #compare-content.hidden,
 #histogram-selection.hidden,
 #compare-selection.hidden,
+.histogram-control-block.hidden,
 .hidden {
     display: none;
 }

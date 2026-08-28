@@ -1,8 +1,26 @@
 /* Histogram panel theme overrides. */
 
-#histogram-hero {
+#histogram-header {
     @{panel.histogram_hero_decor};
     border-color: @{border};
+}
+
+.dock-drag-handle-bar {
+    background-color: @{alpha(text_dim,0.63)};
+}
+
+.dock-drag-handle:hover .dock-drag-handle-bar {
+    background-color: @{alpha(primary,0.86)};
+}
+
+#histogram-controls {
+    background-color: @{panel.histogram_toolbar_item};
+    border-color: @{panel.histogram_toolbar_divider};
+}
+
+#histogram-controls .histogram-select {
+    background-color: @{panel.histogram_toolbar_select};
+    border-color: @{panel.histogram_toolbar_divider};
 }
 
 .stat-card,
@@ -24,39 +42,30 @@
     background-color: @{panel.histogram_grid};
 }
 
-#histogram-docked-controls {
-    border-left-color: @{panel.histogram_toolbar_divider};
-}
-
-#histogram-docked-controls .histogram-toolbar-item {
+.histogram-range-toolbar {
     background-color: @{panel.histogram_toolbar_item};
     border-color: @{panel.histogram_toolbar_divider};
 }
 
-#histogram-docked-controls .histogram-toolbar-item--action {
-    background-color: transparent;
-    border-width: 0;
+.histogram-chip {
+    color: @{primary};
+    background-color: @{panel.primary_bg_soft};
+    border-color: @{panel.primary_border_soft};
 }
 
-#histogram-docked-controls .histogram-select {
-    background-color: @{panel.histogram_toolbar_select};
-    border-color: @{panel.histogram_toolbar_divider};
-}
-
-.hero-eyebrow,
+.histogram-eyebrow,
+.histogram-control-label,
 .stat-label,
 .footer-label,
 .axis-metric,
-#histogram-bin-count,
-#compare-bin-count,
-.control-label,
-.hero-description,
+.histogram-description,
 .empty-message,
-.footer-hint {
+.footer-hint,
+.range-separator {
     color: @{text_dim};
 }
 
-.hero-title,
+.histogram-title,
 .stat-value,
 #histogram-summary,
 #compare-summary,
@@ -66,6 +75,14 @@
 .empty-title,
 .histogram-slider-value {
     color: @{text};
+}
+
+.compare-axis-marker {
+    color: @{text_dim};
+}
+
+.stat-card--primary {
+    border-color: @{panel.primary_border_soft};
 }
 
 .histogram-bar-fill,
