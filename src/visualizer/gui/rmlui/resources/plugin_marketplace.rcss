@@ -282,28 +282,28 @@
     border-width: 0;
 }
 
-.card-row {
+.card-grid-window {
     display: flex;
-    align-items: stretch;
-    justify-content: space-between;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-content: flex-start;
     gap: 12dp;
-    margin-bottom: 12dp;
     min-width: 0;
 }
 
-.card-row:last-child {
-    margin-bottom: 0;
-}
-
-.card-row--single {
-    justify-content: center;
+.card-slot {
+    display: flex;
+    min-width: 0;
+    flex-shrink: 0;
 }
 
 .plugin-card {
     box-sizing: border-box;
-    width: 220dp;
-    min-height: 220dp;
-    flex-shrink: 0;
+    width: 100%;
+    height: 220dp;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
     display: flex;
     flex-direction: column;
     padding: 12dp;
@@ -312,15 +312,12 @@
     transition: background-color 0.14s quadratic-out, border-color 0.14s quadratic-out;
 }
 
-.plugin-card--placeholder {
-    visibility: hidden;
-    pointer-events: none;
-}
-
 .card-info {
-    display: block;
+    display: flex;
+    flex-direction: column;
     flex: 1;
     min-height: 0;
+    min-width: 0;
     overflow: hidden;
     cursor: pointer;
 }
@@ -331,10 +328,15 @@
     gap: 6dp;
     min-width: 0;
     margin-bottom: 4dp;
+    flex: 0 0 auto;
 }
 
 .card-name {
+    flex: 1;
     min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     font-size: 12dp;
     font-weight: 600;
     line-height: 16dp;
@@ -363,6 +365,9 @@
 .card-error {
     display: block;
     min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     font-size: 11dp;
     line-height: 15dp;
 }
@@ -377,15 +382,28 @@
 
 .card-description {
     display: block;
-    max-height: 42dp;
-    margin-top: 6dp;
-    overflow: hidden;
+    min-width: 0;
+    overflow: visible;
+    word-break: break-word;
     font-size: 12dp;
     line-height: 15dp;
 }
 
+.card-description-scroll {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    margin-top: 6dp;
+    padding-right: 4dp;
+    overflow-x: hidden;
+    overflow-y: auto;
+}
+
 .card-info .separator {
     margin: 8dp 0 0;
+    flex: 0 0 auto;
 }
 
 .card-buttons {
@@ -484,6 +502,7 @@
     min-width: 0;
     min-height: 32dp;
     padding: 4dp 9dp;
+    overflow: hidden;
 }
 
 .plugin-list-disclosure {
@@ -506,6 +525,7 @@
     gap: 7dp;
     flex: 1;
     min-width: 0;
+    overflow: hidden;
     padding: 0;
     border-width: 0;
     background-color: transparent;
@@ -514,6 +534,7 @@
 }
 
 .plugin-list-name {
+    flex: 1;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -558,6 +579,7 @@
     min-width: 0;
     padding: 0 11dp 10dp 38dp;
     border-top-width: 1dp;
+    overflow: hidden;
 }
 
 .plugin-list-details.hidden {
@@ -571,14 +593,24 @@
     gap: 5dp 10dp;
     min-width: 0;
     padding-top: 7dp;
+    overflow: hidden;
 }
 
 .plugin-list-meta-item {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     font-size: 11dp;
     line-height: 15dp;
 }
 
 .plugin-list-link {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     max-width: 100%;
     padding: 0;
     border-width: 0;
@@ -592,6 +624,7 @@
 .plugin-list-error {
     display: block;
     min-width: 0;
+    word-break: break-word;
     font-size: 12dp;
     line-height: 15dp;
 }

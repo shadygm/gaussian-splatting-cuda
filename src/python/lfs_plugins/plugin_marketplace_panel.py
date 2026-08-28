@@ -80,7 +80,10 @@ class PluginMarketplacePanel(Panel):
     template = "rmlui/plugin_marketplace.rml"
     height_mode = lf.ui.PanelHeightMode.FILL
     size = (770, 560)
-    update_policy = "dirty"
+    # The card slots depend on the live viewport width, which changes while a
+    # floating window is resized even when the model itself is not dirty.
+    update_policy = "interval"
+    update_interval_ms = 250
 
     def __init__(self):
         self._catalog = PluginMarketplaceCatalog()
@@ -416,7 +419,10 @@ class PluginMarketplacePanel(Panel):
                 if p.name == plugin_name:
                     desc = p.description
                     break
-        description = self._truncate_text(desc or tr("plugin_marketplace.no_description"), 90)
+        # Keep the complete description for the card's bounded scroll region.
+        # Longer copy should remain discoverable without overflowing the card
+        # or its action row.
+        description = desc or tr("plugin_marketplace.no_description")
 
         version_label = ""
         has_version = False
@@ -521,8 +527,18 @@ class PluginMarketplacePanel(Panel):
         viewport_width = self._grid_viewport_width(doc, grid_el)
         layout_width = self._stabilize_layout_width(viewport_width)
         columns, row_width = self._compute_grid_layout(layout_width)
+        card_slot_width = max(
+            float(_CARD_MIN_WIDTH_DP),
+            (float(row_width) - float(max(0, columns - 1) * _CARD_GAP_DP)) / float(columns),
+        )
         card_ids = tuple(str(r.get("card_id", "")) for r in records)
-        signature = (self._view_mode, card_ids, columns, row_width)
+        signature = (
+            self._view_mode,
+            card_ids,
+            columns,
+            row_width,
+            round(card_slot_width, 2),
+        )
         if not force and signature == self._last_grid_signature:
             return
         self._last_grid_signature = signature
@@ -531,35 +547,33 @@ class PluginMarketplacePanel(Panel):
             grid_el.set_inner_rml("")
             return
 
-        rows: List[str] = []
-        for i in range(0, len(records), columns):
-            chunk = list(records[i:i + columns])
-            row_class = "card-row card-row--single" if columns == 1 else "card-row"
-            row_parts = [
-                f'<div class="{row_class}" style="width: {row_width}dp; margin-left: {_GRID_SIDE_MARGIN_DP}dp; margin-right: {_GRID_SIDE_MARGIN_DP}dp;">'
-            ]
-            for record in chunk:
-                row_parts.append(self._build_card_markup(record))
-            for _ in range(columns - len(chunk)):
-                row_parts.append(
-                    f'<div class="plugin-card plugin-card--placeholder" style="width: {_CARD_MIN_WIDTH_DP}dp;"></div>'
-                )
-            row_parts.append("</div>")
-            rows.append("".join(row_parts))
-        grid_el.set_inner_rml("".join(rows))
+        # Match the Asset Manager gallery: the viewport determines the slot
+        # width, and the flex container wraps cards naturally as it resizes.
+        # This avoids fixed rows/placeholders fighting the panel scrollbar and
+        # keeps every row aligned to the available content width.
+        card_width = f"{card_slot_width:.2f}dp"
+        parts = [
+            f'<div class="card-grid-window" style="width: {row_width}dp; margin-left: {_GRID_SIDE_MARGIN_DP}dp; margin-right: {_GRID_SIDE_MARGIN_DP}dp;">'
+        ]
+        for record in records:
+            parts.append(
+                f'<div class="card-slot" style="width: {card_width};">'
+                f'{self._build_card_markup(record, width="100%")}'
+                "</div>"
+            )
+        parts.append("</div>")
+        grid_el.set_inner_rml("".join(parts))
 
     def _grid_viewport_width(self, doc, grid_el) -> int:
-        dp_ratio = max(1.0, lf.ui.get_ui_scale())
-
         main_area_el = doc.get_element_by_id("main-area")
         if main_area_el and getattr(main_area_el, "client_width", 0):
-            return int(max(0.0, float(main_area_el.client_width or 0.0) / dp_ratio))
+            return int(max(0.0, float(main_area_el.client_width or 0.0)))
 
         content_el = doc.get_element_by_id("content")
         if content_el and getattr(content_el, "client_width", 0):
-            return int(max(0.0, float(content_el.client_width or 0.0) / dp_ratio))
+            return int(max(0.0, float(content_el.client_width or 0.0)))
 
-        return int(max(0.0, float(grid_el.client_width or 0.0) / dp_ratio))
+        return int(max(0.0, float(grid_el.client_width or 0.0)))
 
     def _stabilize_layout_width(self, width: int) -> int:
         return max(0, width - _SCROLLBAR_GUTTER_DP)
@@ -616,7 +630,11 @@ class PluginMarketplacePanel(Panel):
         description = (
             ""
             if record.get("has_error")
-            else f'<span class="card-description text-disabled">{esc("description")}</span>'
+            else (
+                '<div class="card-description-scroll">'
+                f'<span class="card-description text-disabled">{esc("description")}</span>'
+                '</div>'
+            )
         )
         version_span = text_span(
             "has_version",
@@ -661,13 +679,14 @@ class PluginMarketplacePanel(Panel):
             f'<div class="card-buttons" id="btns-{esc("card_id")}">{self._build_action_buttons_markup(record)}</div>'
         )
 
-    def _build_card_markup(self, record: Dict[str, object]) -> str:
+    def _build_card_markup(self, record: Dict[str, object], width: Optional[str] = None) -> str:
         def esc(key: str) -> str:
             return escape(str(record.get(key, "")), quote=True)
 
+        card_width = escape(str(width or f"{_CARD_MIN_WIDTH_DP}dp"), quote=True)
         return (
             f'<div class="plugin-card" id="card-{esc("card_id")}" data-card-id="{esc("card_id")}" '
-            f'style="width: {_CARD_MIN_WIDTH_DP}dp;">'
+            f'style="width: {card_width};">'
             f'{self._build_card_inner_markup(record)}'
             '</div>'
         )
