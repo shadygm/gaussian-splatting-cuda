@@ -31,8 +31,7 @@ SUCCESS_DISMISS_SEC = 3.0
 ERROR_DISMISS_SEC = 5.0
 _CARD_GAP_DP = 12
 _CARD_MIN_WIDTH_DP = 220
-_GRID_SIDE_MARGIN_DP = 20
-_SCROLLBAR_GUTTER_DP = 16
+_MAX_CARD_DESCRIPTION_CHARS = 90
 
 _PHASE_MILESTONES: List[Tuple[str, float]] = [
     ("cloning", 0.05),
@@ -419,10 +418,10 @@ class PluginMarketplacePanel(Panel):
                 if p.name == plugin_name:
                     desc = p.description
                     break
-        # Keep the complete description for the card's bounded scroll region.
-        # Longer copy should remain discoverable without overflowing the card
-        # or its action row.
+        # Keep the full copy for expanded list rows, while card view receives a
+        # bounded preview that ends in an explicit ellipsis.
         description = desc or tr("plugin_marketplace.no_description")
+        card_description = self._truncate_text(description, _MAX_CARD_DESCRIPTION_CHARS)
 
         version_label = ""
         has_version = False
@@ -484,6 +483,7 @@ class PluginMarketplacePanel(Panel):
             "status_class": status_class,
             "has_error": bool(entry.error),
             "description": description,
+            "card_description": card_description,
             "info_action": "open-url" if has_github else "",
             "github_url": entry.github_url or "",
             "plugin_name": plugin_name or "",
@@ -525,8 +525,7 @@ class PluginMarketplacePanel(Panel):
             return
 
         viewport_width = self._grid_viewport_width(doc, grid_el)
-        layout_width = self._stabilize_layout_width(viewport_width)
-        columns, row_width = self._compute_grid_layout(layout_width)
+        columns, row_width = self._compute_grid_layout(viewport_width)
         card_slot_width = max(
             float(_CARD_MIN_WIDTH_DP),
             (float(row_width) - float(max(0, columns - 1) * _CARD_GAP_DP)) / float(columns),
@@ -552,9 +551,7 @@ class PluginMarketplacePanel(Panel):
         # This avoids fixed rows/placeholders fighting the panel scrollbar and
         # keeps every row aligned to the available content width.
         card_width = f"{card_slot_width:.2f}dp"
-        parts = [
-            f'<div class="card-grid-window" style="width: {row_width}dp; margin-left: {_GRID_SIDE_MARGIN_DP}dp; margin-right: {_GRID_SIDE_MARGIN_DP}dp;">'
-        ]
+        parts = [f'<div class="card-grid-window" style="width: {row_width}dp;">']
         for record in records:
             parts.append(
                 f'<div class="card-slot" style="width: {card_width};">'
@@ -565,24 +562,22 @@ class PluginMarketplacePanel(Panel):
         grid_el.set_inner_rml("".join(parts))
 
     def _grid_viewport_width(self, doc, grid_el) -> int:
-        main_area_el = doc.get_element_by_id("main-area")
-        if main_area_el and getattr(main_area_el, "client_width", 0):
-            return int(max(0.0, float(main_area_el.client_width or 0.0)))
-
-        content_el = doc.get_element_by_id("content")
-        if content_el and getattr(content_el, "client_width", 0):
-            return int(max(0.0, float(content_el.client_width or 0.0)))
-
-        return int(max(0.0, float(grid_el.client_width or 0.0)))
-
-    def _stabilize_layout_width(self, width: int) -> int:
-        return max(0, width - _SCROLLBAR_GUTTER_DP)
+        # The grid and the manual-install section are siblings in #main-area;
+        # measuring the grid itself keeps their outer edges identical.
+        for element in (
+            grid_el,
+            doc.get_element_by_id("main-area"),
+            doc.get_element_by_id("content"),
+        ):
+            if element and getattr(element, "client_width", 0):
+                return int(max(0.0, float(element.client_width or 0.0)))
+        return 0
 
     def _compute_grid_layout(self, width: int) -> Tuple[int, int]:
         if width <= 0:
             return 1, _CARD_MIN_WIDTH_DP
 
-        usable_width = max(0, width - (2 * _GRID_SIDE_MARGIN_DP))
+        usable_width = max(0, width)
         if usable_width <= 0:
             return 1, _CARD_MIN_WIDTH_DP
 
@@ -631,9 +626,9 @@ class PluginMarketplacePanel(Panel):
             ""
             if record.get("has_error")
             else (
-                '<div class="card-description-scroll">'
-                f'<span class="card-description text-disabled">{esc("description")}</span>'
-                '</div>'
+                '<span class="card-description text-disabled">'
+                f'{escape(str(record.get("card_description") or record.get("description", "")), quote=True)}'
+                '</span>'
             )
         )
         version_span = text_span(

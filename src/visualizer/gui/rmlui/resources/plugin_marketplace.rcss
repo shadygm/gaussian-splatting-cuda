@@ -385,22 +385,13 @@
 .card-description {
     display: block;
     min-width: 0;
-    overflow: visible;
+    max-height: 45dp;
+    margin-top: 6dp;
+    overflow: hidden;
+    text-overflow: ellipsis;
     word-break: break-word;
     font-size: 12dp;
     line-height: 15dp;
-}
-
-.card-description-scroll {
-    display: flex;
-    flex-direction: column;
-    flex: 1 1 auto;
-    min-width: 0;
-    min-height: 0;
-    margin-top: 6dp;
-    padding-right: 4dp;
-    overflow-x: hidden;
-    overflow-y: auto;
 }
 
 .card-info .separator {
