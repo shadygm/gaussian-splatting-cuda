@@ -1,7 +1,6 @@
 /* Histogram panel theme overrides. */
 
 #histogram-header {
-    @{panel.histogram_hero_decor};
     border-color: @{border};
 }
 
@@ -14,21 +13,18 @@
 }
 
 #histogram-controls {
-    background-color: @{panel.histogram_toolbar_item};
-    border-color: @{panel.histogram_toolbar_divider};
+    border-color: @{border};
 }
 
 #histogram-controls .histogram-select {
-    background-color: @{panel.histogram_toolbar_select};
-    border-color: @{panel.histogram_toolbar_divider};
+    background-color: @{surface};
+    border-color: @{border};
 }
 
-.stat-card,
-#histogram-card,
-#compare-card,
-.empty-card,
+.histogram-control-group--advanced,
+#histogram-stats,
+.histogram-range-toolbar,
 #histogram-footer {
-    background-color: @{panel.histogram_surface};
     border-color: @{border};
 }
 
@@ -43,19 +39,17 @@
 }
 
 .histogram-range-toolbar {
-    background-color: @{panel.histogram_toolbar_item};
-    border-color: @{panel.histogram_toolbar_divider};
+    border-color: @{border};
 }
 
 .histogram-chip {
     color: @{primary};
-    background-color: @{panel.primary_bg_soft};
-    border-color: @{panel.primary_border_soft};
+    background-color: transparent;
+    border-color: @{alpha(primary,0.55)};
 }
 
-.histogram-eyebrow,
-.histogram-control-label,
-.stat-label,
+.histogram-context-label,
+.histogram-metric__label,
 .footer-label,
 .axis-metric,
 .histogram-description,
@@ -66,7 +60,7 @@
 }
 
 .histogram-title,
-.stat-value,
+.histogram-metric__value,
 #histogram-summary,
 #compare-summary,
 .axis-label,
@@ -77,12 +71,16 @@
     color: @{text};
 }
 
+.histogram-metric--primary .histogram-metric__value {
+    color: @{primary};
+}
+
 .compare-axis-marker {
     color: @{text_dim};
 }
 
-.stat-card--primary {
-    border-color: @{panel.primary_border_soft};
+.histogram-metric + .histogram-metric {
+    border-color: @{border};
 }
 
 .histogram-bar-fill,
@@ -107,6 +105,5 @@
 }
 
 .footer-history-actions {
-    background-color: @{panel.histogram_footer_chip};
-    border-color: @{panel.histogram_toolbar_divider};
+    border-color: transparent;
 }

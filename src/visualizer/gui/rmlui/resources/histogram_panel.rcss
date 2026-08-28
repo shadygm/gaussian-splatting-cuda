@@ -55,7 +55,7 @@ body {
     display: flex;
     flex: 1;
     flex-direction: column;
-    gap: 6dp;
+    gap: 4dp;
     min-width: 0;
     min-height: 0;
     overflow: hidden;
@@ -95,94 +95,92 @@ body {
     min-height: 26dp;
 }
 
-/* Header and toolbar are one compact window chrome unit. The header carries
- * context; the toolbar carries the controls without duplicating a second
- * floating-only control tree. */
+/* Keep context and settings in the same compact flow as other docked panels.
+ * The panel's only raised surfaces are the plots below. */
 #histogram-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
     flex: 0 0 auto;
     min-width: 0;
-    min-height: 58dp;
-    gap: 16dp;
-    padding: 10dp 12dp;
-    border-width: 1dp;
-    border-radius: 8dp 8dp 0 0;
+    min-height: 34dp;
+    gap: 10dp;
+    padding: 2dp 6dp 5dp;
+    border-bottom-width: 1dp;
 }
 
-.histogram-heading {
+.histogram-context-copy {
     display: flex;
-    flex: 1 1 240dp;
+    flex: 1;
     flex-direction: column;
     min-width: 0;
     gap: 2dp;
 }
 
-.histogram-eyebrow,
-.histogram-control-label,
-.stat-label,
-.footer-label,
-.axis-metric {
-    font-size: 11dp;
-    letter-spacing: 0.25dp;
+.histogram-context-label {
+    display: block;
+    font-size: 10dp;
+    letter-spacing: 0.2dp;
+    line-height: 12dp;
     text-transform: uppercase;
 }
 
 .histogram-title {
+    display: block;
     min-width: 0;
     overflow: hidden;
-    font-size: 15dp;
-    font-weight: 600;
+    font-size: 13dp;
+    font-weight: bold;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
 .histogram-description {
+    display: block;
     min-width: 0;
     overflow: hidden;
-    font-size: 12dp;
-    line-height: 16dp;
+    margin-bottom: 0;
+    font-size: 11dp;
+    line-height: 14dp;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
 #histogram-controls {
     display: flex;
-    align-items: flex-end;
+    flex-direction: column;
     flex: 0 0 auto;
-    flex-wrap: wrap;
-    gap: 8dp 10dp;
+    gap: 0;
     min-width: 0;
-    padding: 8dp 10dp 9dp;
-    border-width: 1dp;
-    border-top-width: 0;
-    border-radius: 0 0 8dp 8dp;
+    padding: 2dp 6dp 4dp;
+    border-bottom-width: 1dp;
+}
+
+.histogram-control-group {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    min-width: 0;
+}
+
+.histogram-control-group--advanced {
+    margin-top: 2dp;
+    padding-top: 2dp;
+    border-top-width: 1dp;
 }
 
 .histogram-control-block {
-    display: flex;
-    flex: 1 1 170dp;
-    flex-direction: column;
-    min-width: 126dp;
-    gap: 3dp;
+    min-width: 0;
 }
 
-.histogram-control-block--select {
-    flex-basis: 180dp;
+#histogram-controls .setting-row {
+    padding-top: 2dp;
+    padding-bottom: 2dp;
 }
 
-.histogram-control-block--toggle {
-    flex: 0 1 96dp;
-    min-width: 84dp;
-}
-
-.histogram-control-block--slider {
-    flex-basis: 164dp;
-}
-
-.histogram-control-label {
-    font-weight: 600;
+#histogram-controls .setting-row__label-col {
+    width: 132dp;
+    min-width: 132dp;
 }
 
 .histogram-select {
@@ -193,38 +191,16 @@ body {
 }
 
 .histogram-slider-row {
-    display: flex;
-    align-items: center;
     min-width: 0;
-    height: 24dp;
-    gap: 6dp;
 }
 
 .histogram-setting-slider {
-    flex: 1;
     min-width: 60dp;
-    margin-top: 0;
-    position: static;
-    top: auto;
 }
 
 .histogram-slider-value {
-    display: inline-block;
-    flex: 0 0 30dp;
-    min-width: 30dp;
-    text-align: right;
     font-family: "JetBrains Mono";
     font-size: 12dp;
-}
-
-.histogram-toggle-control {
-    display: flex;
-    align-items: center;
-    min-height: 24dp;
-}
-
-.histogram-toggle-control input[type="checkbox"] {
-    margin: 0;
 }
 
 #histogram-empty {
@@ -234,7 +210,7 @@ body {
     min-height: 0;
 }
 
-.empty-card {
+.histogram-empty-state {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -244,8 +220,6 @@ body {
     min-height: 180dp;
     gap: 6dp;
     padding: 18dp;
-    border-width: 1dp;
-    border-radius: 8dp;
     text-align: center;
 }
 
@@ -266,7 +240,7 @@ body {
     flex-direction: column;
     min-width: 0;
     min-height: 0;
-    gap: 8dp;
+    gap: 6dp;
     overflow-x: hidden;
     overflow-y: auto;
     padding-right: 2dp;
@@ -277,36 +251,42 @@ body {
     flex: 0 0 auto;
     flex-wrap: wrap;
     min-width: 0;
-    gap: 6dp;
+    padding: 3dp 0 4dp;
+    border-bottom-width: 1dp;
 }
 
-.stat-card {
+.histogram-metric {
     display: flex;
-    flex: 1 1 112dp;
+    flex: 1 1 116dp;
     flex-direction: column;
-    min-width: 104dp;
-    min-height: 48dp;
-    gap: 3dp;
-    padding: 7dp 9dp;
-    border-width: 1dp;
-    border-radius: 7dp;
+    min-width: 100dp;
+    gap: 1dp;
+    padding: 1dp 10dp;
 }
 
-.stat-card--primary {
-    flex-basis: 120dp;
+.histogram-metric + .histogram-metric {
+    border-left-width: 1dp;
 }
 
-.stat-value {
+.histogram-metric__label {
+    font-size: 10dp;
+    letter-spacing: 0.2dp;
+    line-height: 12dp;
+    text-transform: uppercase;
+}
+
+.histogram-metric__value {
     min-width: 0;
     overflow: hidden;
-    font-size: 14dp;
+    font-family: "JetBrains Mono";
+    font-size: 12dp;
     font-weight: 600;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-.stat-value--small {
-    font-size: 12dp;
+.histogram-metric__value--small {
+    font-size: 11dp;
 }
 
 #histogram-card,
@@ -316,10 +296,8 @@ body {
     flex-direction: column;
     min-width: 0;
     min-height: 0;
-    gap: 8dp;
-    padding: 10dp;
-    border-width: 1dp;
-    border-radius: 8dp;
+    gap: 6dp;
+    padding: 0;
 }
 
 #compare-card {
@@ -332,7 +310,8 @@ body {
     justify-content: space-between;
     flex: 0 0 auto;
     min-width: 0;
-    gap: 10dp;
+    gap: 8dp;
+    min-height: 24dp;
 }
 
 #histogram-summary,
@@ -340,38 +319,40 @@ body {
     flex: 1;
     min-width: 0;
     overflow: hidden;
-    font-size: 12dp;
+    margin-bottom: 0;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
 .histogram-chip {
     flex: 0 0 auto;
-    padding: 2dp 7dp;
+    padding: 1dp 5dp;
     border-width: 1dp;
-    border-radius: 999dp;
-    font-size: 11dp;
-    letter-spacing: 0.2dp;
+    border-radius: 3dp;
+    font-size: 10dp;
+    letter-spacing: 0.15dp;
     text-transform: uppercase;
 }
 
 .histogram-range-toolbar {
     display: flex;
-    align-items: center;
     flex: 0 0 auto;
-    flex-wrap: wrap;
     min-width: 0;
-    gap: 6dp;
-    padding: 6dp 7dp;
-    border-width: 1dp;
-    border-radius: 6dp;
+    padding: 2dp 0 4dp;
+    border-bottom-width: 1dp;
 }
 
 .range-of-interest-label {
-    flex: 0 0 auto;
-    margin-right: 2dp;
     font-size: 12dp;
-    font-weight: 600;
+}
+
+.histogram-range-control {
+    display: flex;
+    align-items: center;
+    flex: 1;
+    flex-wrap: wrap;
+    min-width: 0;
+    gap: 6dp;
 }
 
 .range-input {
@@ -392,7 +373,7 @@ body {
     flex: 0 0 auto;
     min-width: 56dp;
     min-height: 24dp;
-    margin-left: 2dp;
+    margin-left: auto;
 }
 
 .range-reset:disabled {
@@ -415,7 +396,7 @@ body {
     min-height: 148dp;
     overflow: hidden;
     border-width: 1dp;
-    border-radius: 7dp;
+    border-radius: 3dp;
 }
 
 .histogram-grid-line {
@@ -504,7 +485,7 @@ body {
     min-height: 0;
 }
 
-.compare-empty-card {
+.histogram-empty-state--compare {
     min-height: 200dp;
 }
 
@@ -603,18 +584,17 @@ body {
     flex: 0 0 auto;
     flex-wrap: wrap;
     min-width: 0;
-    min-height: 48dp;
-    gap: 10dp;
-    padding: 8dp 10dp;
-    border-width: 1dp;
-    border-radius: 8dp;
+    min-height: 34dp;
+    gap: 8dp;
+    padding: 5dp 0 2dp;
+    border-top-width: 1dp;
 }
 
 .footer-selection-stat {
     display: flex;
-    flex: 0 1 132dp;
+    flex: 0 1 116dp;
     flex-direction: column;
-    min-width: 112dp;
+    min-width: 100dp;
     gap: 2dp;
 }
 
@@ -651,9 +631,7 @@ body {
 }
 
 .footer-history-actions {
-    padding: 2dp;
-    border-width: 1dp;
-    border-radius: 6dp;
+    padding: 0;
 }
 
 .histogram-history-btn {
@@ -662,7 +640,7 @@ body {
     height: 28dp;
     min-height: 28dp;
     padding: 0;
-    border-radius: 5dp;
+    border-radius: 3dp;
 }
 
 .histogram-history-icon {
@@ -678,7 +656,7 @@ body {
 }
 
 #histogram-floating-header.hidden,
-#histogram-heading-actions.hidden,
+.histogram-heading-actions.hidden,
 #histogram-empty.hidden,
 #histogram-content.hidden,
 #histogram-card.hidden,
