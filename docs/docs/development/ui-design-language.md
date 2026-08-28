@@ -8,15 +8,12 @@ title: UI design language and window patterns
 This document is the working contract for LichtFeld Studio's RmlUi windows and
 panels. It describes the visual and structural language already established by
 the Asset Manager, Rendering, Training, Preferences, frame-extraction, and
-shared dialog surfaces. It is also the migration guide for the Plugin
-Marketplace and Histogram view: preserve their behavior, but do not use their
-current visual composition as a pattern to copy.
+shared dialog surfaces.
 
 The examples in this document are implementation references, not a requirement
 to reproduce every existing detail. In particular, older resources may still
 contain hard-coded colors or inline layout declarations. New work should follow
-the themed/shared patterns below, and migrations should remove those exceptions
-as the touched surface is modernized.
+the themed/shared patterns below.
 
 ## The short version
 
@@ -101,7 +98,7 @@ design when it does.
 | Surface | Use it for | Shell and placement | Reference |
 | --- | --- | --- | --- |
 | Docked panel | Persistent controls or status that belong beside the viewport | `docked_panel.rml`; plugin `space` is usually `MAIN_PANEL_TAB`, `SIDE_PANEL`, or a built-in parent | Rendering, Training, Asset Manager |
-| Floating panel/window | A utility with independent width/height, a larger workflow, or a temporary tool | `floating_window.rml`; `space = FLOATING`; provide a sensible `size` | Preferences, Plugin Marketplace, Histogram |
+| Floating panel/window | A utility with independent width/height, a larger workflow, or a temporary tool | `floating_window.rml`; `space = FLOATING`; provide a sensible `size` | Preferences |
 | Native/custom floating window | A media preview or specialized interaction that needs direct/native rendering | Keep the shared title/content/overlay contract even when the panel owns its host | Video/frame extraction |
 | Anchored popup | A short local choice, such as a color picker or compact menu | Position next to its trigger, clamp to the host, close on completion/outside click | Rendering and Training color pickers |
 | Modal dialog | A decision or input that must block the underlying task | `modal_overlay.rml` through the modal API; use an explicit semantic style | Confirm, overwrite, conflict, and error dialogs |
@@ -317,65 +314,6 @@ The modal backdrop is an input boundary, not merely a dimming effect. While a
 modal is visible, pointer and keyboard input must not reach the viewport or a
 panel underneath it. Confirmations should name the consequence and provide a
 neutral cancel action plus a clearly styled destructive/affirmative action.
-
-## Migration targets
-
-### Plugin Marketplace: preserve behavior, replace composition
-
-The current marketplace remains the source of truth for behavior: curated and
-local entries, filter/sort, card/list views, manual URL installation,
-install/update/load/unload/reload/uninstall, startup preferences, progress,
-errors, and uninstall confirmation all remain available.
-
-It is a migration target for visual structure because the controller builds
-large chunks of card markup dynamically and maintains a second confirmation
-overlay inside the panel. When touching it:
-
-- keep the `floating-window` shell and one scroll region;
-- make the filter/sort/search controls a responsive toolbar that can wrap at a
-  narrow width;
-- use shared `.btn` variants, status classes, and theme tokens for cards,
-  metadata, progress, and list selection;
-- keep card and list views as two presentations of the same semantic record;
-- retain stable ids for dynamic rows and preserve focus/expanded state across
-  rerenders;
-- prefer the shared modal API for uninstall confirmation instead of another
-  panel-local backdrop/dialog;
-- keep manual URL feedback adjacent to its action and expose a clear loading,
-  success, or error state;
-- localize every visible label, tooltip, status, and empty state.
-
-The marketplace's current visuals are a bad design reference only; its
-operation/state transitions are a good behavior reference.
-
-### Histogram: preserve analysis, simplify hierarchy
-
-The histogram's behavior is also in scope for preservation: metric selection,
-comparison metric, log scale, bin controls, summary statistics, range editing,
-drag selection, compare selection, undo/redo, clear, and delete.
-
-The current view is a migration target because it presents a hero, duplicated
-docked/floating control markup, multiple nested cards, and a large custom
-stylesheet. When modernizing it:
-
-- keep one semantic control model and adapt its layout with CSS instead of
-  maintaining two independently drifting control trees;
-- use the shared settings-row/control geometry where a histogram control is an
-  ordinary form setting;
-- keep a single clear hierarchy: controls, summary/statistics, chart, and
-  footer actions;
-- reserve custom chart styling for bars, axes, grid lines, selection overlays,
-  and other data visualization geometry;
-- move palette-dependent colors/decorators to the sibling theme stylesheet;
-- make chart surfaces and footer actions use the same surface/border language
-  as other panels without flattening the chart's data contrast;
-- expose an empty/no-scene state and the drag/keyboard hint with the same
-  empty/status text roles used elsewhere;
-- keep dynamic bar heights and selection bounds as model-driven runtime styles;
-  those are legitimate data geometry, unlike static padding or colors.
-
-The histogram's current visuals are a bad design reference only; its analysis
-and selection semantics remain a good behavior reference.
 
 ## Do and don't
 
