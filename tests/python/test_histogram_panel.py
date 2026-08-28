@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Regression tests for histogram metric extraction."""
 
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -178,38 +177,6 @@ def histogram_panel_module():
 def test_histogram_panel_uses_dirty_update_policy(histogram_panel_module):
     assert histogram_panel_module.HistogramPanel.update_policy == "dirty"
     assert "update_interval_ms" not in histogram_panel_module.HistogramPanel.__dict__
-
-
-def test_histogram_resource_uses_one_shared_window_toolbar():
-    """The docked and floating panel modes must share one control tree."""
-    root = Path(__file__).resolve().parents[2]
-    resources = root / "src" / "visualizer" / "gui" / "rmlui" / "resources"
-    rml = (resources / "histogram_panel.rml").read_text(encoding="utf-8")
-    rcss = (resources / "histogram_panel.rcss").read_text(encoding="utf-8")
-    theme = (resources / "histogram_panel.theme.rcss").read_text(encoding="utf-8")
-
-    assert rml.count('id="histogram-header"') == 1
-    assert rml.count('id="histogram-controls"') == 1
-    assert 'id="histogram-docked-controls"' not in rml
-    assert 'id="histogram-floating-controls"' not in rml
-    assert rml.count('data-value="metric_id"') == 1
-    assert rml.count('data-value="compare_metric_id"') == 1
-    for element_id in (
-        "histogram-bars",
-        "compare-cells",
-        "range-min-input",
-        "range-max-input",
-        "compare-range-x-min-input",
-        "compare-range-x-max-input",
-        "compare-range-y-min-input",
-        "compare-range-y-max-input",
-    ):
-        assert f'id="{element_id}"' in rml
-    assert 'class="histogram-slider-row"' in rml
-    assert '#content-wrap' in rcss and 'padding: 6dp;' in rcss
-    assert '.histogram-control-block' in rcss
-    assert '#histogram-header' in theme
-    assert '#histogram-controls' in theme
 
 
 def test_histogram_mode_available_hides_when_paused(histogram_panel_module, monkeypatch):

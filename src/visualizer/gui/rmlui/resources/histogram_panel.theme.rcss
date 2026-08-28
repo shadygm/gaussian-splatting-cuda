@@ -1,30 +1,16 @@
 /* Histogram panel theme overrides. */
 
-#histogram-header {
+#histogram-hero {
+    @{panel.histogram_hero_decor};
     border-color: @{border};
 }
 
-.dock-drag-handle-bar {
-    background-color: @{alpha(text_dim,0.63)};
-}
-
-.dock-drag-handle:hover .dock-drag-handle-bar {
-    background-color: @{alpha(primary,0.86)};
-}
-
-#histogram-controls {
-    border-color: @{border};
-}
-
-#histogram-controls .histogram-select {
-    background-color: @{surface};
-    border-color: @{border};
-}
-
-.histogram-control-group--advanced,
-#histogram-stats,
-.histogram-range-toolbar,
+.stat-card,
+#histogram-card,
+#compare-card,
+.empty-card,
 #histogram-footer {
+    background-color: @{panel.histogram_surface};
     border-color: @{border};
 }
 
@@ -38,29 +24,40 @@
     background-color: @{panel.histogram_grid};
 }
 
-.histogram-range-toolbar {
-    border-color: @{border};
+#histogram-docked-controls {
+    border-left-color: @{panel.histogram_toolbar_divider};
 }
 
-.histogram-chip {
-    color: @{primary};
+#histogram-docked-controls .histogram-toolbar-item {
+    background-color: @{panel.histogram_toolbar_item};
+    border-color: @{panel.histogram_toolbar_divider};
+}
+
+#histogram-docked-controls .histogram-toolbar-item--action {
     background-color: transparent;
-    border-color: @{alpha(primary,0.55)};
+    border-width: 0;
 }
 
-.histogram-context-label,
-.histogram-metric__label,
+#histogram-docked-controls .histogram-select {
+    background-color: @{panel.histogram_toolbar_select};
+    border-color: @{panel.histogram_toolbar_divider};
+}
+
+.hero-eyebrow,
+.stat-label,
 .footer-label,
 .axis-metric,
-.histogram-description,
+#histogram-bin-count,
+#compare-bin-count,
+.control-label,
+.hero-description,
 .empty-message,
-.footer-hint,
-.range-separator {
+.footer-hint {
     color: @{text_dim};
 }
 
-.histogram-title,
-.histogram-metric__value,
+.hero-title,
+.stat-value,
 #histogram-summary,
 #compare-summary,
 .axis-label,
@@ -69,18 +66,6 @@
 .empty-title,
 .histogram-slider-value {
     color: @{text};
-}
-
-.histogram-metric--primary .histogram-metric__value {
-    color: @{primary};
-}
-
-.compare-axis-marker {
-    color: @{text_dim};
-}
-
-.histogram-metric + .histogram-metric {
-    border-color: @{border};
 }
 
 .histogram-bar-fill,
@@ -105,5 +90,6 @@
 }
 
 .footer-history-actions {
-    border-color: transparent;
+    background-color: @{panel.histogram_footer_chip};
+    border-color: @{panel.histogram_toolbar_divider};
 }
